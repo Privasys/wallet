@@ -17,6 +17,10 @@ const PODFILE_SNIPPET = `
     target.build_configurations.each do |bc|
       bc.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
       bc.build_settings['SWIFT_VERSION'] = '5'
+      # Disable signing for resource bundle targets (Xcode 14+)
+      if target.respond_to?(:product_type) && target.product_type == 'com.apple.product-type.bundle'
+        bc.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      end
     end
   end
 `;

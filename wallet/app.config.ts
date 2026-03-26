@@ -126,7 +126,26 @@ export default (context: ConfigContext): ExpoConfig => {
                 process.env.EAS_BUILD_ANDROID_VERSION_CODE ??
                 '0',
             COMMIT_HASH: process.env.EAS_BUILD_GIT_COMMIT_HASH,
-            eas: { projectId: EXPO_PROJECT_ID }
+            eas: {
+                projectId: EXPO_PROJECT_ID,
+                build: {
+                    experimental: {
+                        ios: {
+                            appExtensions: [
+                                {
+                                    targetName: 'NotificationServiceExtension',
+                                    bundleIdentifier: `${config.bundle}.NotificationService`,
+                                    entitlements: {
+                                        'keychain-access-groups': [
+                                            '$(AppIdentifierPrefix)org.privasys.shared'
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
         },
         plugins: [
             [
@@ -175,6 +194,7 @@ export default (context: ConfigContext): ExpoConfig => {
             'expo-web-browser',
             ['expo-notifications', { icon: './assets/notification-icon.png', color: '#B21D36' }],
             './modules/passkey-provider/app.plugin',
+            './modules/notification-service/app.plugin',
             './plugins/swift-concurrency-fix',
             './plugins/disable-lint-vital'
         ].filter((p) => p !== 'noop') as ExpoConfig['plugins'],
