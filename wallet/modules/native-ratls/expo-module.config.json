@@ -1,0 +1,9 @@
+{
+    "platforms": ["ios", "android"],
+    "ios": {
+        "modules": ["NativeRaTlsModule"]
+    },
+    "android": {
+        "modules": ["org.privasys.nativeratls.NativeRaTlsModule"]
+    }
+}

@@ -1,0 +1,39 @@
+{
+    "name": "@privasys/auth",
+    "version": "0.1.0",
+    "description": "Browser SDK for Privasys Wallet authentication — QR code, push notification, and session management.",
+    "license": "AGPL-3.0-only",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./react": {
+            "types": "./dist/react.d.ts",
+            "import": "./dist/react.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch"
+    },
+    "peerDependencies": {
+        "react": ">=18"
+    },
+    "peerDependenciesMeta": {
+        "react": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@types/react": "^19.2.14",
+        "react": "^19.0.0",
+        "typescript": "~5.9.0"
+    }
+}

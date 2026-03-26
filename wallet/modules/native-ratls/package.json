@@ -1,0 +1,16 @@
+{
+    "name": "@privasys/native-ratls",
+    "version": "0.1.0",
+    "private": true,
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "scripts": {
+        "build:ios": "../../scripts/build-ratls-ios.sh",
+        "build:android": "../../scripts/build-ratls-android.sh"
+    },
+    "peerDependencies": {
+        "expo": ">=55",
+        "react": "*",
+        "react-native": "*"
+    }
+}

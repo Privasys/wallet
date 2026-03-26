@@ -1,0 +1,346 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0.
+#
+# Privasys Wallet — Full CI/CD pipeline
+#
+# Builds the Rust native RA-TLS library for iOS & Android,
+# then builds the Expo app with EAS Build (cloud) or locally
+# on GitHub Actions macOS runners.
+#
+# Triggers:
+#   - Push to main (full build + deploy)
+#   - Pull requests (type-check + lint only)
+#   - Manual dispatch (choose platform + profile)
+
+name: Build Wallet
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wallet/**'
+      - 'sdk/**'
+      - '.github/workflows/build-wallet.yaml'
+  pull_request:
+    paths:
+      - 'wallet/**'
+      - 'sdk/**'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options: [ios, android, all]
+      profile:
+        description: 'EAS build profile'
+        required: true
+        default: 'development'
+        type: choice
+        options: [development, preview, staging, production]
+      use_eas_cloud:
+        description: 'Use EAS Cloud Build (vs local GitHub Actions runner)'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  RUST_TOOLCHAIN: stable
+  NODE_VERSION: '24'
+  BUN_VERSION: '1.3.8'
+
+jobs:
+  # ─── Type-check & lint (runs on all PRs) ──────────────────────────
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+      - name: Type-check
+        working-directory: wallet
+        run: bunx tsc --noEmit
+      - name: Type-check SDK
+        working-directory: sdk
+        run: |
+          bun install --frozen-lockfile
+          bunx tsc --noEmit
+
+  # ─── Build Rust RA-TLS native libraries ───────────────────────────
+  build-rust-ios:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.platform == 'ios' || inputs.platform == 'all'))
+    runs-on: macos-14  # Apple Silicon runner (M1), macOS Sonoma, Xcode 15+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Privasys/ra-tls-clients
+          path: ra-tls-clients
+          token: ${{ secrets.RATLS_REPO_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ra-tls-clients/rust/mobile/target
+          key: rust-ios-${{ hashFiles('ra-tls-clients/rust/mobile/Cargo.lock') }}
+          restore-keys: rust-ios-
+
+      - name: Build iOS static libraries
+        working-directory: ra-tls-clients/rust/mobile
+        run: |
+          chmod +x scripts/build-ios.sh
+          ./scripts/build-ios.sh release
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratls-ios
+          path: ra-tls-clients/rust/mobile/target/ios/
+          retention-days: 7
+
+  build-rust-android:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.platform == 'android' || inputs.platform == 'all'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Privasys/ra-tls-clients
+          path: ra-tls-clients
+          token: ${{ secrets.RATLS_REPO_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+        id: ndk
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ra-tls-clients/rust/mobile/target
+          key: rust-android-${{ hashFiles('ra-tls-clients/rust/mobile/Cargo.lock') }}
+          restore-keys: rust-android-
+
+      - name: Build Android shared libraries
+        working-directory: ra-tls-clients/rust/mobile
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          chmod +x scripts/build-android.sh
+          ./scripts/build-android.sh release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratls-android
+          path: ra-tls-clients/rust/mobile/target/android/jniLibs/
+          retention-days: 7
+
+  # ─── Build app via EAS Cloud ──────────────────────────────────────
+  # NOTE: EAS Cloud builds clone from git, so pre-built Rust binaries
+  # must be committed to the repo for this path to work. Use local
+  # builds (below) when Rust artifacts are provided by prior CI steps.
+  build-eas-cloud:
+    if: >
+      github.event_name == 'workflow_dispatch' && inputs.use_eas_cloud
+    needs: [check]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: ${{ inputs.platform == 'all' && fromJSON('["ios", "android"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build with EAS Cloud
+        working-directory: wallet
+        run: |
+          eas build \
+            --platform ${{ matrix.platform }} \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+
+  # ─── Build app locally on GitHub Actions runner ───────────────────
+  # Uses pre-built Rust artifacts from prior jobs. This is the default
+  # path for push-to-main and for manual dispatch without EAS Cloud.
+  build-local-ios:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       !inputs.use_eas_cloud &&
+       (inputs.platform == 'ios' || inputs.platform == 'all'))
+    needs: [check, build-rust-ios]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Download Rust iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ratls-ios
+          path: wallet/modules/native-ratls/ios/lib/
+
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods
+
+      - name: Build iOS locally
+        working-directory: wallet
+        run: |
+          PROFILE="${{ inputs.profile || 'preview' }}"
+          eas build \
+            --platform ios \
+            --profile "$PROFILE" \
+            --local \
+            --non-interactive \
+            --output build/wallet-ios.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-ios-${{ inputs.profile || 'preview' }}
+          path: wallet/build/wallet-ios.ipa
+          retention-days: 30
+
+  build-local-android:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       !inputs.use_eas_cloud &&
+       (inputs.platform == 'android' || inputs.platform == 'all'))
+    needs: [check, build-rust-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Rust Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ratls-android
+          path: wallet/modules/native-ratls/android/src/main/jniLibs/
+
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android locally
+        working-directory: wallet
+        run: |
+          PROFILE="${{ inputs.profile || 'preview' }}"
+          eas build \
+            --platform android \
+            --profile "$PROFILE" \
+            --local \
+            --non-interactive \
+            --output build/wallet-android.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-android-${{ inputs.profile || 'preview' }}
+          path: wallet/build/wallet-android.apk
+          retention-days: 30
+
+  # ─── Submit to TestFlight ─────────────────────────────────────────
+  submit-testflight:
+    if: github.event_name == 'push'
+    needs: [build-local-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: wallet-ios-preview
+          path: wallet/build/
+
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit to TestFlight
+        working-directory: wallet
+        run: |
+          eas submit \
+            --platform ios \
+            --path build/wallet-ios.ipa \
+            --non-interactive

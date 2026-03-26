@@ -1,0 +1,90 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0.
+
+# Auth Broker — Kubernetes Deployment
+# Deploy: kubectl apply -f deploy/k8s.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-broker
+  namespace: privasys
+  labels:
+    app: auth-broker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-broker
+  template:
+    metadata:
+      labels:
+        app: auth-broker
+    spec:
+      containers:
+        - name: auth-broker
+          image: ghcr.io/privasys/auth-broker:latest
+          ports:
+            - containerPort: 8090
+              name: http
+          env:
+            - name: BROKER_PORT
+              value: "8090"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-broker
+  namespace: privasys
+  labels:
+    app: auth-broker
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8090
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: auth-broker
+---
+# Horizontal Pod Autoscaler — scale on WebSocket connections
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-broker
+  namespace: privasys
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-broker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

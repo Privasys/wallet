@@ -1,0 +1,93 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0.
+
+# Auth Broker — Cloud Run deployment
+#
+# Deploy:
+#   gcloud run deploy auth-broker \
+#     --image ghcr.io/privasys/auth-broker:latest \
+#     --region europe-west1 \
+#     --platform managed \
+#     --port 8090 \
+#     --allow-unauthenticated \
+#     --min-instances 1 \
+#     --max-instances 10 \
+#     --memory 128Mi \
+#     --cpu 1 \
+#     --timeout 300 \
+#     --session-affinity \
+#     --use-http2
+#
+# Note: --session-affinity is important for WebSocket connections.
+# Cloud Run supports WebSocket via HTTP/2 streaming.
+#
+# Custom domain:
+#   gcloud run domain-mappings create \
+#     --service auth-broker \
+#     --domain broker.privasys.org \
+#     --region europe-west1
+
+# GitHub Actions workflow for CI/CD
+name: Deploy Auth Broker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'broker/**'
+  workflow_dispatch:
+
+env:
+  SERVICE: auth-broker
+  REGION: europe-west1
+  IMAGE: ghcr.io/privasys/auth-broker
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run tests
+        working-directory: broker
+        run: go test ./...
+
+      - name: Build and push image
+        working-directory: broker
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE }}:${{ github.sha }}
+          flags: |
+            --port=8090
+            --allow-unauthenticated
+            --min-instances=1
+            --max-instances=10
+            --memory=128Mi
+            --cpu=1
+            --timeout=300
+            --session-affinity

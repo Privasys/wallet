@@ -1,0 +1,37 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0.
+
+name: Build Broker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'broker/**'
+      - '.github/workflows/build-broker.yaml'
+  pull_request:
+    paths:
+      - 'broker/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: broker/go.sum
+
+      - name: Vet
+        working-directory: broker
+        run: go vet ./...
+
+      - name: Build
+        working-directory: broker
+        run: go build -o auth-broker ./cmd/broker
+
+      - name: Build Docker image
+        working-directory: broker
+        run: docker build -t auth-broker:ci .

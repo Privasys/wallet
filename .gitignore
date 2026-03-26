@@ -1,0 +1,60 @@
+# ── OS ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Editors & IDEs ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Environment & secrets ───────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+*.jks
+*.mobileprovision
+*.keystore
+
+# ── Node / Bun ──────────────────────────────────────────────────
+node_modules/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+bun.lockb.bak
+*.tsbuildinfo
+
+# ── Expo / React Native ────────────────────────────────────────
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+android/
+ios/
+.kotlin/
+*.orig.*
+.metro-health-check*
+
+# ── Go ──────────────────────────────────────────────────────────
+broker/broker
+broker/auth-broker
+*.exe
+*.test
+*.out
+vendor/
+
+# ── Rust ────────────────────────────────────────────────────────
+target/
+*.rs.bk
+
+# ── Build outputs ───────────────────────────────────────────────
+build/
+*.ipa
+*.apk
+*.aab

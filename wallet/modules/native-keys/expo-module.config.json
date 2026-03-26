@@ -1,0 +1,9 @@
+{
+    "platforms": ["ios", "android"],
+    "ios": {
+        "modules": ["NativeKeysModule"]
+    },
+    "android": {
+        "modules": ["org.privasys.nativekeys.NativeKeysModule"]
+    }
+}

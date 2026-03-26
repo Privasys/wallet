@@ -1,0 +1,57 @@
+// Copyright (c) Privasys. All rights reserved.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import { requireNativeModule } from 'expo-modules-core';
+import type { AttestationResult, AttestationError, VerificationPolicy } from './NativeRaTls.types.js';
+
+const NativeRaTls = requireNativeModule('NativeRaTls');
+
+/**
+ * Connect to an enclave and inspect its RA-TLS attestation certificate.
+ *
+ * This does NOT verify the attestation — it only reads the certificate
+ * extensions and returns them for display purposes.
+ *
+ * @param host  Enclave hostname or IP address.
+ * @param port  Enclave port number.
+ * @param caCertPath  Optional path to a CA PEM file on disk.
+ * @returns Parsed attestation data from the certificate.
+ */
+export async function inspect(
+    host: string,
+    port: number,
+    caCertPath?: string
+): Promise<AttestationResult> {
+    const json: string = await NativeRaTls.inspect(host, port, caCertPath ?? null);
+    const result: AttestationResult | AttestationError = JSON.parse(json);
+    if ('error' in result) throw new Error(result.error);
+    return result;
+}
+
+/**
+ * Connect to an enclave and verify its RA-TLS certificate against a policy.
+ *
+ * In challenge mode, a nonce is sent in the TLS ClientHello so the enclave
+ * binds it into a fresh attestation certificate, proving liveness.
+ *
+ * @param host    Enclave hostname or IP address.
+ * @param port    Enclave port number.
+ * @param policy  Verification policy specifying expected measurements.
+ * @param caCertPath  Optional path to a CA PEM file on disk.
+ * @returns Verified attestation data.
+ * @throws If the certificate fails policy verification.
+ */
+export async function verify(
+    host: string,
+    port: number,
+    policy: VerificationPolicy,
+    caCertPath?: string
+): Promise<AttestationResult> {
+    const policyJson = JSON.stringify(policy);
+    const json: string = await NativeRaTls.verify(host, port, caCertPath ?? null, policyJson);
+    const result: AttestationResult | AttestationError = JSON.parse(json);
+    if ('error' in result) throw new Error(result.error);
+    return result;
+}
+
+export type { AttestationResult, AttestationError, VerificationPolicy } from './NativeRaTls.types.js';
