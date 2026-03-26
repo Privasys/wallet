@@ -6,7 +6,7 @@
         "requireCommit": true
     },
     "build": {
-        "base": { "node": "24.12.0", "bun": "1.3.8" },
+        "base": { "node": "24.12.0", "bun": "1.3.11" },
         "development": {
             "extends": "preview",
             "developmentClient": true,
@@ -27,5 +27,14 @@
             "env": { "NODE_ENV": "production", "STAGE": "production" }
         }
     },
-    "submit": { "production": {} }
+    "submit": {
+        "production": {
+            "ios": {
+                "ascAppId": "6761209489",
+                "ascApiKeyId": "9H3WFH5GZY",
+                "ascApiKeyIssuerId": "187e7a6e-cbee-4599-8043-eb862a5bf2f9",
+                "ascApiKeyPath": "../keys/AuthKey_9H3WFH5GZY.p8"
+            }
+        }
+    }
 }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import ExpoModulesCore
+import NativeRaTlsC
 
 public class NativeRaTlsModule: Module {
     public func definition() -> ModuleDefinition {

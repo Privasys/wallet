@@ -1,0 +1,48 @@
+# EAS Build ignore file
+# =====================
+# Same rules as .gitignore EXCEPT we allow pre-built native binaries
+# that CI downloads (Rust RA-TLS .a / .so artifacts).
+# When .easignore exists, EAS uses it INSTEAD of .gitignore.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+# Expo generated dirs (anchored to project root only)
+/android/
+/ios/
+
+# NOTE: We intentionally do NOT ignore modules/native-ratls/ios/lib/
+# or modules/native-ratls/android/src/main/jniLibs/ here.
+# CI downloads pre-built Rust artifacts to these paths before EAS build.
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo

@@ -5,11 +5,11 @@ plugins {
 
 android {
     namespace 'org.privasys.wallet.passkey'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
-        minSdk 34
-        targetSdk 35
+        minSdk 24
+        targetSdk 36
     }
 
     compileOptions {

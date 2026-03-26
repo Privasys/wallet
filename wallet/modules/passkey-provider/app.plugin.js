@@ -47,16 +47,10 @@ function withIosPasskeyExtension(config) {
         return mod;
     });
 
-    // NSExtension for credential provider UI
-    config = withInfoPlist(config, (mod) => {
-        mod.modResults.NSExtension = {
-            NSExtensionPointIdentifier:
-                'com.apple.authentication-services-credential-provider-ui',
-            NSExtensionPrincipalClass:
-                '$(PRODUCT_MODULE_NAME).CredentialProviderViewController',
-        };
-        return mod;
-    });
+    // NOTE: NSExtension for credential provider UI requires a separate
+    // Xcode extension target. Adding it to the main app Info.plist causes
+    // Apple validation to reject the IPA. The extension target will be
+    // added in a future update.
 
     return config;
 }

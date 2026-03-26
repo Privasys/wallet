@@ -10,7 +10,7 @@ import android.util.Base64
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.Signature
@@ -26,11 +26,11 @@ class NativeKeysModule : Module() {
         Name("NativeKeys")
 
         AsyncFunction("generateKey") { keyId: String, requireBiometric: Boolean ->
-            withContext(Dispatchers.IO) { generateKeyImpl(keyId, requireBiometric) }
+            runBlocking(Dispatchers.IO) { generateKeyImpl(keyId, requireBiometric) }
         }
 
         AsyncFunction("sign") { keyId: String, dataBase64url: String ->
-            withContext(Dispatchers.IO) { signImpl(keyId, dataBase64url) }
+            runBlocking(Dispatchers.IO) { signImpl(keyId, dataBase64url) }
         }
 
         AsyncFunction("keyExists") { keyId: String ->
@@ -43,7 +43,7 @@ class NativeKeysModule : Module() {
         }
 
         AsyncFunction("getPublicKey") { keyId: String ->
-            withContext(Dispatchers.IO) { getPublicKeyImpl(keyId) }
+            runBlocking(Dispatchers.IO) { getPublicKeyImpl(keyId) }
         }
     }
 

@@ -1,6 +1,6 @@
 # Privasys Wallet
 
-A mobile authenticator for the [Privasys](https://privasys.org) confidential computing platform. Authenticate to web applications using hardware-attested enclaves, FIDO2-grade cryptography, and on-device biometrics — no passwords, no trust assumptions.
+A mobile authenticator for the [Privasys](https://privasys.org) confidential computing platform. Authenticate to web applications using hardware-attested enclaves, FIDO2-grade cryptography, and on-device biometrics. No passwords.No trust assumptions.
 
 ## Repository Structure
 
@@ -45,7 +45,7 @@ go build -o auth-broker ./cmd/broker
 5. On success, the wallet signs a FIDO2 assertion using on-device biometrics.
 6. The signed result is relayed back to the SDK through the broker.
 
-All private keys stay on-device. The broker only relays opaque messages — it never sees credentials.
+All private keys stay on-device. The broker only relays opaque messages, it never sees credentials.
 
 ## Building
 

@@ -1,0 +1,5 @@
+module NativeRaTlsC {
+    header "ratls_mobile.h"
+    link "ratls_mobile"
+    export *
+}

@@ -48,7 +48,7 @@ on:
 env:
   RUST_TOOLCHAIN: stable
   NODE_VERSION: '24'
-  BUN_VERSION: '1.3.8'
+  BUN_VERSION: '1.3.11'
 
 jobs:
   # ─── Type-check & lint (runs on all PRs) ──────────────────────────
@@ -80,6 +80,7 @@ jobs:
     runs-on: macos-14  # Apple Silicon runner (M1), macOS Sonoma, Xcode 15+
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: Privasys/ra-tls-clients
           path: ra-tls-clients
@@ -97,7 +98,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ra-tls-clients/rust/mobile/target
-          key: rust-ios-${{ hashFiles('ra-tls-clients/rust/mobile/Cargo.lock') }}
+          key: rust-ios-${{ hashFiles('ra-tls-clients/rust/Cargo.lock') }}
           restore-keys: rust-ios-
 
       - name: Build iOS static libraries
@@ -110,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ratls-ios
-          path: ra-tls-clients/rust/mobile/target/ios/
+          path: ra-tls-clients/rust/mobile/target/aarch64-apple-ios/release/libratls_mobile.a
           retention-days: 7
 
   build-rust-android:
@@ -120,6 +121,7 @@ jobs:
        (inputs.platform == 'android' || inputs.platform == 'all'))
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: Privasys/ra-tls-clients
@@ -144,7 +146,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ra-tls-clients/rust/mobile/target
-          key: rust-android-${{ hashFiles('ra-tls-clients/rust/mobile/Cargo.lock') }}
+          key: rust-android-${{ hashFiles('ra-tls-clients/rust/Cargo.lock') }}
           restore-keys: rust-android-
 
       - name: Build Android shared libraries
@@ -210,7 +212,7 @@ jobs:
        !inputs.use_eas_cloud &&
        (inputs.platform == 'ios' || inputs.platform == 'all'))
     needs: [check, build-rust-ios]
-    runs-on: macos-14
+    runs-on: macos-26  # Xcode 26 — ships iOS 26 SDK
     steps:
       - uses: actions/checkout@v4
 
@@ -223,6 +225,14 @@ jobs:
         with:
           name: ratls-ios
           path: wallet/modules/native-ratls/ios/lib/
+
+      - name: Verify Rust artifacts
+        run: |
+          ls -la wallet/modules/native-ratls/ios/lib/
+          # Force-track and commit so EAS tarball includes them
+          # (gitignored files are excluded from the EAS archive)
+          git add -f wallet/modules/native-ratls/ios/lib/
+          git -c user.name='CI' -c user.email='ci@privasys.org' commit -m 'ci: add Rust iOS artifacts [skip ci]'
 
       - name: Install dependencies
         working-directory: wallet
@@ -281,6 +291,16 @@ jobs:
           name: ratls-android
           path: wallet/modules/native-ratls/android/src/main/jniLibs/
 
+      - name: Verify Rust artifacts
+        run: |
+          echo "=== jniLibs contents ==="
+          find wallet/modules/native-ratls/android/src/main/jniLibs/ -type f
+          ls -la wallet/modules/native-ratls/android/src/main/jniLibs/arm64-v8a/
+          # Force-track and commit so EAS tarball includes them
+          # (gitignored files are excluded from the EAS archive)
+          git add -f wallet/modules/native-ratls/android/src/main/jniLibs/
+          git -c user.name='CI' -c user.email='ci@privasys.org' commit -m 'ci: add Rust Android artifacts [skip ci]'
+
       - name: Install dependencies
         working-directory: wallet
         run: bun install --frozen-lockfile
@@ -336,6 +356,11 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Write App Store Connect API Key
+        run: |
+          mkdir -p keys
+          echo "${{ secrets.ASC_API_KEY_P8_BASE64 }}" | base64 -d > keys/AuthKey_9H3WFH5GZY.p8
 
       - name: Submit to TestFlight
         working-directory: wallet

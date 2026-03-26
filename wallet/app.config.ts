@@ -8,7 +8,8 @@ const STAGE = process.env.STAGE || 'development';
 const EXPO_PROJECT_ID =
     process.env.NX_EXPO_PROJECT_ID ??
     process.env.EXPO_PUBLIC_PROJECT_ID ??
-    process.env.EAS_BUILD_PROJECT_ID;
+    process.env.EAS_BUILD_PROJECT_ID ??
+    '482c4a6f-fdc0-44a9-9c3e-477dd2efedbc';
 // const SENTRY_DSN_URL =
 //     process.env.NX_SENTRY_DSN ??
 //     process.env.NX_SENTRY_URL ??
@@ -38,18 +39,21 @@ const envConfig = {
         name: 'Privasys Wallet Dev',
         scheme: 'privasys-wallet-dev',
         bundle: 'org.privasys.wallet',
+        icon: './assets/icon.development.png',
         adaptiveIconBackgroundColor: '#F0F9FF'
     },
     preview: {
         name: 'Privasys Wallet Preview',
         scheme: 'privasys-wallet-preview',
         bundle: 'org.privasys.wallet',
+        icon: './assets/icon.preview.png',
         adaptiveIconBackgroundColor: '#F0FFF4'
     },
     production: {
         name: 'Privasys Wallet',
         scheme: 'privasys-wallet',
         bundle: 'org.privasys.wallet',
+        icon: './assets/icon.production.png',
         adaptiveIconBackgroundColor: '#FFFFFF'
     }
 };
@@ -65,10 +69,10 @@ export default (context: ConfigContext): ExpoConfig => {
             'Privasys Wallet is a digital wallet for managing your connection keys to Privasys services.',
         slug: 'privasys-wallet',
         owner: 'privasys',
-        icon: './assets/icon.svg',
+        icon: config.icon,
         version: version,
         splash: {
-            image: './assets/icon.svg',
+            image: config.icon,
             resizeMode: 'contain',
             backgroundColor: config.adaptiveIconBackgroundColor
         },
@@ -98,7 +102,7 @@ export default (context: ConfigContext): ExpoConfig => {
             // Submission to Google Play requires a unique package name.
             package: config.bundle,
             adaptiveIcon: {
-                foregroundImage: './assets/icon.svg',
+                foregroundImage: config.icon,
                 backgroundColor: config.adaptiveIconBackgroundColor
             },
             // predictiveBackGestureEnabled: true
@@ -112,7 +116,7 @@ export default (context: ConfigContext): ExpoConfig => {
                 }
             ]
         },
-        web: { favicon: './assets/icon.svg', output: 'static', bundler: 'metro' },
+        web: { favicon: config.icon, output: 'static', bundler: 'metro' },
         extra: {
             STAGE,
             CODE_VERSION: version,
@@ -142,7 +146,7 @@ export default (context: ConfigContext): ExpoConfig => {
                         buildToolsVersion: '36.1.0',
                         kotlinVersion: '2.1.20'
                     },
-                    ios: { deploymentTarget: '26.0' }
+                    ios: { deploymentTarget: '16.0' }
                 }
             ],
             [
@@ -167,9 +171,12 @@ export default (context: ConfigContext): ExpoConfig => {
             //     : 'noop',
             'expo-asset',
             'expo-font',
+            'expo-image',
             'expo-web-browser',
-            ['expo-notifications', { icon: './assets/notification-icon.svg', color: '#B21D36' }],
-            './modules/passkey-provider/app.plugin'
+            ['expo-notifications', { icon: './assets/notification-icon.png', color: '#B21D36' }],
+            './modules/passkey-provider/app.plugin',
+            './plugins/swift-concurrency-fix',
+            './plugins/disable-lint-vital'
         ].filter((p) => p !== 'noop') as ExpoConfig['plugins'],
         experiments: { typedRoutes: true, reactCompiler: true, buildCacheProvider: 'eas' }
     };

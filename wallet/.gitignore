@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+package-lock.json
 
 # Expo
 .expo/
@@ -14,6 +15,10 @@ ios/
 # Un-ignore native module sources (expo config plugins + extension code)
 !modules/**/ios/
 !modules/**/android/
+
+# Pre-built Rust binaries (downloaded during CI, never committed)
+modules/native-ratls/ios/lib/
+modules/native-ratls/android/src/main/jniLibs/
 
 # Native
 .kotlin/

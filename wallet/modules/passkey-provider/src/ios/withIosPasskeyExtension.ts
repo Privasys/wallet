@@ -56,14 +56,9 @@ export const withIosPasskeyExtension: ConfigPlugin = (config) => {
         return mod;
     });
 
-    // 3. Add Info.plist entries for the credential provider
-    config = withInfoPlist(config, (mod) => {
-        mod.modResults['NSExtension'] = {
-            NSExtensionPointIdentifier: 'com.apple.authentication-services-credential-provider-ui',
-            NSExtensionPrincipalClass: '$(PRODUCT_MODULE_NAME).CredentialProviderViewController',
-        };
-        return mod;
-    });
+    // 3. NSExtension for credential provider UI requires a separate Xcode
+    //    extension target. Adding it to the main app Info.plist causes Apple
+    //    validation to reject the IPA. TODO: add proper extension target.
 
     // 4. Add extension target placeholder to Xcode project
     config = withXcodeProject(config, (mod) => {

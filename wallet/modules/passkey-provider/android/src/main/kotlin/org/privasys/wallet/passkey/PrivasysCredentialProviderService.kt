@@ -14,7 +14,9 @@ import android.util.Base64
 import androidx.annotation.RequiresApi
 import androidx.credentials.exceptions.ClearCredentialException
 import androidx.credentials.exceptions.CreateCredentialException
+import androidx.credentials.exceptions.CreateCredentialUnknownException
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.provider.BeginCreateCredentialRequest
 import androidx.credentials.provider.BeginCreateCredentialResponse
 import androidx.credentials.provider.BeginGetCredentialRequest
@@ -78,7 +80,6 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
         try {
             val createEntries = listOf(
                 CreateEntry.Builder(
-                    applicationContext,
                     "Privasys Wallet",
                     android.app.PendingIntent.getActivity(
                         applicationContext, 0,
@@ -95,10 +96,7 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
             )
         } catch (e: Exception) {
             callback.onError(
-                CreateCredentialException(
-                    CreateCredentialException.TYPE_NO_CREATE_OPTIONS,
-                    e.message
-                )
+                CreateCredentialUnknownException(e.message)
             )
         }
     }
@@ -167,10 +165,7 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
 
             if (allCredentials.isEmpty()) {
                 callback.onError(
-                    GetCredentialException(
-                        GetCredentialException.TYPE_NO_CREDENTIALS,
-                        "No stored credentials"
-                    )
+                    GetCredentialUnknownException("No stored credentials")
                 )
                 return
             }
@@ -181,6 +176,9 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
                 try {
                     val entry = JSONObject(value)
                     val rpId = entry.getString("rpId")
+                    val beginOption = request.beginGetCredentialOptions
+                        .filterIsInstance<androidx.credentials.provider.BeginGetPublicKeyCredentialOption>()
+                        .firstOrNull() ?: continue
                     entries.add(
                         PublicKeyCredentialEntry.Builder(
                             applicationContext,
@@ -190,9 +188,7 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
                                 android.content.Intent(),
                                 android.app.PendingIntent.FLAG_IMMUTABLE
                             ),
-                            androidx.credentials.provider.BeginGetPublicKeyCredentialOption(
-                                "{\"rpId\":\"$rpId\"}"
-                            )
+                            beginOption
                         ).build()
                     )
                 } catch (_: Exception) {
@@ -207,10 +203,7 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
             )
         } catch (e: Exception) {
             callback.onError(
-                GetCredentialException(
-                    GetCredentialException.TYPE_NO_CREDENTIALS,
-                    e.message
-                )
+                GetCredentialUnknownException(e.message)
             )
         }
     }

@@ -20,9 +20,10 @@ Pod::Spec.new do |s|
   s.vendored_libraries = 'lib/libratls_mobile.a'
   s.preserve_paths     = 'lib/**', 'include/**'
 
-  # C header for the Rust FFI
+  # C header for the Rust FFI (exposed via module.modulemap)
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}/include"',
+    'SWIFT_INCLUDE_PATHS'  => '"${PODS_TARGET_SRCROOT}/include"',
     'OTHER_LDFLAGS'       => '-lratls_mobile -lc++ -framework Security -framework SystemConfiguration',
     'LIBRARY_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}/lib"'
   }
