@@ -13,40 +13,43 @@ import * as NativeKeys from '../../modules/native-keys/src/index';
 import * as NativeRaTls from '../../modules/native-ratls/src/index';
 
 // ── Wire types matching the enclave's Fido2Request/Fido2Response ────────
+// Enclave uses serde(tag = "type") — responses are flat with a `type` field.
 
 interface RegisterBeginResponse {
-    register_options: {
-        challenge: string;
-        rp: { id: string; name: string };
-        user: { id: string; name: string; display_name: string };
-        pub_key_cred_params: Array<{ type: string; alg: number }>;
-        authenticator_selection: {
-            authenticator_attachment: string;
-            user_verification: string;
-        };
-        attestation: string;
+    type: 'register_options';
+    challenge: string;
+    rp: { id: string; name: string };
+    user: { id: string; name: string; display_name: string };
+    pub_key_cred_params: Array<{ type: string; alg: number }>;
+    authenticator_selection: {
+        authenticator_attachment: string;
+        user_verification: string;
     };
+    attestation: string;
 }
 
 interface RegisterCompleteResponse {
-    register_ok: { session_token: string; credential_id: string };
+    type: 'register_ok';
+    status: string;
+    session_token?: string;
 }
 
 interface AuthenticateBeginResponse {
-    authenticate_options: {
-        challenge: string;
-        rp_id: string;
-        allow_credentials: Array<{ type: string; id: string }>;
-        user_verification: string;
-    };
+    type: 'authenticate_options';
+    challenge: string;
+    allow_credentials?: Array<{ type: string; id: string }>;
+    user_verification: string;
 }
 
 interface AuthenticateCompleteResponse {
-    authenticate_ok: { session_token: string };
+    type: 'authenticate_ok';
+    status: string;
+    session_token?: string;
 }
 
 interface Fido2Error {
-    error: { code: string; message: string };
+    type: 'error';
+    error: string;
 }
 
 type Fido2Response<T> = T | Fido2Error;
@@ -100,8 +103,8 @@ async function fido2Fetch<T extends object>(origin: string, path: string, body?:
     }
 
     const json: Fido2Response<T> = JSON.parse(result.body);
-    if ('error' in json) {
-        const msg = (json as Fido2Error).error.message;
+    if ('type' in json && (json as any).type === 'error') {
+        const msg = (json as Fido2Error).error;
         console.error(`[FIDO2] ${path} — enclave error: ${msg}`);
         throw new Error(`FIDO2 error: ${msg}`);
     }
@@ -173,12 +176,22 @@ export async function register(
     browserSessionId: string
 ): Promise<{ sessionToken: string; credentialId: string; userHandle: string; userName: string }> {
     // 1. Begin registration — get challenge and options from enclave
+    //    Generate a random user handle (64 random bytes, base64url-encoded)
+    const userHandleBytes = new Uint8Array(32);
+    crypto.getRandomValues(userHandleBytes);
+    const userHandle = base64urlEncode(userHandleBytes);
+
     const beginResp = await fido2Fetch<RegisterBeginResponse>(
         origin,
         '/fido2/register/begin',
-        { register_begin: {} }
+        {
+            type: 'register_begin',
+            user_name: keyAlias,
+            user_handle: userHandle,
+            browser_session_id: browserSessionId,
+        }
     );
-    const options = beginResp.register_options;
+    const options = beginResp;
 
     // 2. Generate or retrieve hardware key
     const keyInfo = await NativeKeys.generateKey(keyAlias, true);
@@ -243,18 +256,18 @@ export async function register(
         origin,
         '/fido2/register/complete',
         {
-            register_complete: {
-                credential_id: base64urlEncode(credentialIdBytes),
-                client_data_json: clientDataB64,
-                attestation_object: base64urlEncode(attestationObject),
-                browser_session_id: browserSessionId
-            }
+            type: 'register_complete',
+            challenge: options.challenge,
+            credential_id: base64urlEncode(credentialIdBytes),
+            client_data_json: clientDataB64,
+            attestation_object: base64urlEncode(attestationObject),
+            browser_session_id: browserSessionId,
         }
     );
 
     return {
-        sessionToken: completeResp.register_ok.session_token,
-        credentialId: completeResp.register_ok.credential_id,
+        sessionToken: completeResp.session_token || '',
+        credentialId: base64urlEncode(credentialIdBytes),
         userHandle: options.user.id,
         userName: options.user.name
     };
@@ -279,9 +292,13 @@ export async function authenticate(
     const beginResp = await fido2Fetch<AuthenticateBeginResponse>(
         origin,
         '/fido2/authenticate/begin',
-        { authenticate_begin: { credential_id: credentialId } }
+        {
+            type: 'authenticate_begin',
+            credential_id: credentialId,
+            browser_session_id: browserSessionId,
+        }
     );
-    const options = beginResp.authenticate_options;
+    const options = beginResp;
 
     // 2. Build clientDataJSON
     const clientData = JSON.stringify({
@@ -295,7 +312,7 @@ export async function authenticate(
 
     // 3. Build authenticatorData (simpler — no attested credential data)
     const rpIdHash = new Uint8Array(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(options.rp_id))
+        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(origin.split(':')[0]))
     );
     const flags = new Uint8Array([0x05]); // UP | UV
     const signCount = new Uint8Array([0, 0, 0, 1]); // Incremented
@@ -314,17 +331,17 @@ export async function authenticate(
         origin,
         '/fido2/authenticate/complete',
         {
-            authenticate_complete: {
-                credential_id: credentialId,
-                client_data_json: clientDataB64,
-                authenticator_data: authDataB64,
-                signature: sigResult.signature,
-                browser_session_id: browserSessionId
-            }
+            type: 'authenticate_complete',
+            challenge: options.challenge,
+            credential_id: credentialId,
+            client_data_json: clientDataB64,
+            authenticator_data: authDataB64,
+            signature: sigResult.signature,
+            browser_session_id: browserSessionId,
         }
     );
 
-    return { sessionToken: completeResp.authenticate_ok.session_token };
+    return { sessionToken: completeResp.session_token || '' };
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────
