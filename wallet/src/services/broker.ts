@@ -58,20 +58,16 @@ export function relaySessionToken(
                     typeof event.data === 'string' ? JSON.parse(event.data) : {};
 
                 if (data.type === 'broker-hello' || data.type === 'browser-waiting') {
-                    // Browser is waiting — send the session token
+                    // Browser is waiting — send the session token.
+                    // Fields must be top-level to match the SDK's auth-result handler.
                     ws.send(
                         JSON.stringify({
-                            type: 'wallet-session',
-                            payload: {
-                                sessionToken,
-                                pushToken
-                            }
+                            type: 'auth-result',
+                            sessionToken,
+                            pushToken
                         })
                     );
-                }
-
-                if (data.type === 'browser-ack') {
-                    // Browser confirmed receipt — we're done
+                    // Browser will close its side after receiving; onclose resolves.
                     clearTimeout(timeout);
                     ws.close();
                     resolve();
