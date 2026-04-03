@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe('relaySessionToken', () => {
-    it('sends auth-result with top-level fields on browser-waiting', async () => {
+    it('sends auth-result immediately on open (browser-first / QR flow)', async () => {
         const promise = relaySessionToken(
             'wss://broker.example.com/relay',
             'sess-123',
@@ -58,15 +58,10 @@ describe('relaySessionToken', () => {
         const ws = FakeWebSocket.instances[0];
         expect(ws).toBeDefined();
 
-        // Simulate hub notifying wallet that browser is waiting
-        ws.onmessage?.({ data: JSON.stringify({ type: 'browser-waiting' }) });
+        // auth-result sent immediately on open
+        expect(ws.sent).toHaveLength(1);
 
-        await tick();
-
-        // Should have sent wallet-hello on open, then auth-result
-        expect(ws.sent).toHaveLength(2);
-
-        const authMsg = JSON.parse(ws.sent[1]);
+        const authMsg = JSON.parse(ws.sent[0]);
         expect(authMsg).toEqual({
             type: 'auth-result',
             sessionToken: 'tok-abc',
@@ -90,10 +85,7 @@ describe('relaySessionToken', () => {
         await tick();
         const ws = FakeWebSocket.instances[0];
 
-        ws.onmessage?.({ data: JSON.stringify({ type: 'browser-waiting' }) });
-        await tick();
-
-        const authMsg = JSON.parse(ws.sent[1]);
+        const authMsg = JSON.parse(ws.sent[0]);
         // Must NOT have a payload wrapper
         expect(authMsg.payload).toBeUndefined();
         expect(authMsg.sessionToken).toBe('tok-def');
@@ -102,28 +94,50 @@ describe('relaySessionToken', () => {
         await promise;
     });
 
-    it('also triggers on broker-hello', async () => {
+    it('sends on browser-waiting if open has not yet sent (wallet-first / push flow)', async () => {
+        // WebSocket that never auto-opens — simulates wallet connecting
+        // before browser, so onopen fires but browser isn't there yet.
+        // Instead, we skip onopen and only deliver browser-waiting.
+        let capturedWs: any;
+        (globalThis as any).WebSocket = class {
+            onopen: (() => void) | null = null;
+            onmessage: ((e: { data: string }) => void) | null = null;
+            onerror: ((e: unknown) => void) | null = null;
+            onclose: (() => void) | null = null;
+            sent: string[] = [];
+            closed = false;
+            url: string;
+            constructor(url: string) {
+                this.url = url;
+                capturedWs = this;
+                // Do NOT auto-fire onopen
+            }
+            send(data: string) { this.sent.push(data); }
+            close() { this.closed = true; setTimeout(() => this.onclose?.(), 0); }
+        };
+
         const promise = relaySessionToken(
             'wss://broker.example.com/relay',
-            'sess-789',
-            'tok-ghi',
-            'push-000'
+            'sess-push',
+            'tok-push',
+            'push-tok'
         );
-
-        await tick();
-        const ws = FakeWebSocket.instances[0];
-
-        ws.onmessage?.({ data: JSON.stringify({ type: 'broker-hello' }) });
         await tick();
 
-        const authMsg = JSON.parse(ws.sent[1]);
-        expect(authMsg.type).toBe('auth-result');
-        expect(ws.closed).toBe(true);
+        // Simulate browser-waiting (hub notifies wallet that browser arrived)
+        capturedWs.onmessage?.({ data: JSON.stringify({ type: 'browser-waiting' }) });
+        await tick();
+
+        expect(capturedWs.sent).toHaveLength(1);
+        const msg = JSON.parse(capturedWs.sent[0]);
+        expect(msg.type).toBe('auth-result');
+        expect(msg.sessionToken).toBe('tok-push');
+        expect(capturedWs.closed).toBe(true);
 
         await promise;
     });
 
-    it('sends wallet-hello on open', async () => {
+    it('sends auth-result message type on open', async () => {
         const promise = relaySessionToken(
             'wss://broker.example.com/relay',
             's1',
@@ -134,12 +148,9 @@ describe('relaySessionToken', () => {
         await tick();
         const ws = FakeWebSocket.instances[0];
 
-        const hello = JSON.parse(ws.sent[0]);
-        expect(hello.type).toBe('wallet-hello');
+        const msg = JSON.parse(ws.sent[0]);
+        expect(msg.type).toBe('auth-result');
 
-        // Clean up — trigger close
-        ws.onmessage?.({ data: JSON.stringify({ type: 'browser-waiting' }) });
-        await tick();
         await promise;
     });
 
@@ -158,12 +169,41 @@ describe('relaySessionToken', () => {
             'wss://broker.example.com/relay?session=my-session&role=wallet'
         );
 
-        ws.onmessage?.({ data: JSON.stringify({ type: 'browser-waiting' }) });
-        await tick();
         await promise;
     });
 
-    it('rejects on WebSocket error', async () => {
+    it('rejects on WebSocket error before open', async () => {
+        // Override WebSocket to fire onerror instead of onopen
+        (globalThis as any).WebSocket = class extends FakeWebSocket {
+            constructor(url: string) {
+                super(url);
+                // Replace the auto-open with an error
+                const self = this;
+                // Clear the setTimeout that fires onopen
+                FakeWebSocket.instances.push(self);
+            }
+        };
+        // Re-assign so our subclass is used, but prevent double-push
+        const origInstances = FakeWebSocket.instances;
+        FakeWebSocket.instances = [];
+
+        (globalThis as any).WebSocket = class {
+            onopen: (() => void) | null = null;
+            onmessage: ((e: { data: string }) => void) | null = null;
+            onerror: ((e: unknown) => void) | null = null;
+            onclose: (() => void) | null = null;
+            sent: string[] = [];
+            closed = false;
+            url: string;
+            constructor(url: string) {
+                this.url = url;
+                // Fire error instead of open
+                setTimeout(() => this.onerror?.({} as any), 0);
+            }
+            send(data: string) { this.sent.push(data); }
+            close() { this.closed = true; setTimeout(() => this.onclose?.(), 0); }
+        };
+
         const promise = relaySessionToken(
             'wss://broker.example.com/relay',
             's',
@@ -171,16 +211,29 @@ describe('relaySessionToken', () => {
             null
         );
 
-        await tick();
-        const ws = FakeWebSocket.instances[0];
-
-        ws.onerror?.({});
-
         await expect(promise).rejects.toThrow('Broker WebSocket error');
     });
 
-    it('rejects with timeout when no response arrives', async () => {
+    it('rejects with timeout when open never fires', async () => {
         jest.useFakeTimers();
+
+        // WebSocket that never opens
+        (globalThis as any).WebSocket = class {
+            onopen: (() => void) | null = null;
+            onmessage: ((e: { data: string }) => void) | null = null;
+            onerror: ((e: unknown) => void) | null = null;
+            onclose: (() => void) | null = null;
+            sent: string[] = [];
+            closed = false;
+            url: string;
+            constructor(url: string) { this.url = url; }
+            send(data: string) { this.sent.push(data); }
+            close() {
+                this.closed = true;
+                // onclose fires synchronously in the timeout handler
+                this.onclose?.();
+            }
+        };
 
         const promise = relaySessionToken(
             'wss://broker.example.com/relay',
@@ -192,7 +245,6 @@ describe('relaySessionToken', () => {
         // Fast-forward past the 15s timeout
         jest.advanceTimersByTime(16_000);
 
-        // The close callback fires synchronously in fake timers
         await expect(promise).rejects.toThrow('Broker relay timed out');
 
         jest.useRealTimers();

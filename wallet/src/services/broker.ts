@@ -34,22 +34,40 @@ export function relaySessionToken(
     pushToken: string | null
 ): Promise<void> {
     return new Promise((resolve, reject) => {
+        let settled = false;
+
         const timeout = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                reject(new Error('Broker relay timed out'));
+            }
             ws.close();
-            reject(new Error('Broker relay timed out'));
         }, 15_000);
 
         const wsUrl = `${brokerUrl}?session=${encodeURIComponent(sessionId)}&role=wallet`;
         const ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
-            // Announce wallet presence
+        const sendResult = () => {
+            if (settled) return;
             ws.send(
                 JSON.stringify({
-                    type: 'wallet-hello',
-                    payload: { version: '0.2.0' }
+                    type: 'auth-result',
+                    sessionToken,
+                    pushToken
                 })
             );
+            settled = true;
+            clearTimeout(timeout);
+            ws.close();
+            resolve();
+        };
+
+        ws.onopen = () => {
+            // Send immediately — in the normal QR flow the browser is
+            // already connected, and the hub will forward the message.
+            // The hub only notifies the *other* peer on join, so the
+            // wallet never receives a trigger in the browser-first case.
+            sendResult();
         };
 
         ws.onmessage = (event) => {
@@ -57,35 +75,31 @@ export function relaySessionToken(
                 const data: BrokerMessage =
                     typeof event.data === 'string' ? JSON.parse(event.data) : {};
 
-                if (data.type === 'broker-hello' || data.type === 'browser-waiting') {
-                    // Browser is waiting — send the session token.
-                    // Fields must be top-level to match the SDK's auth-result handler.
-                    ws.send(
-                        JSON.stringify({
-                            type: 'auth-result',
-                            sessionToken,
-                            pushToken
-                        })
-                    );
-                    // Browser will close its side after receiving; onclose resolves.
-                    clearTimeout(timeout);
-                    ws.close();
-                    resolve();
+                if (data.type === 'browser-waiting') {
+                    // Wallet connected first (push flow) and browser just
+                    // arrived — send the token now.
+                    sendResult();
                 }
             } catch {
                 // Ignore non-JSON messages
             }
         };
 
-        ws.onerror = (event) => {
+        ws.onerror = () => {
             clearTimeout(timeout);
-            reject(new Error('Broker WebSocket error'));
+            if (!settled) {
+                settled = true;
+                reject(new Error('Broker WebSocket error'));
+            }
         };
 
         ws.onclose = () => {
             clearTimeout(timeout);
-            // Resolve even on clean close (broker may close after relay)
-            resolve();
+            if (!settled) {
+                settled = true;
+                // Resolve on clean close (broker may close after relay)
+                resolve();
+            }
         };
     });
 }
