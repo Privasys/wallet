@@ -9,7 +9,7 @@ module.exports = {
     ],
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
-        '^@noble/hashes/(.*)$': '<rootDir>/node_modules/@noble/hashes/$1.js',
+        '^@noble/hashes/(.*)\\.js$': '<rootDir>/node_modules/@noble/hashes/$1.js',
     },
     modulePaths: ['<rootDir>'],
     roots: ['<rootDir>/src', '<rootDir>/modules'],

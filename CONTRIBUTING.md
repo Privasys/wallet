@@ -30,6 +30,7 @@ Thank you for your interest in contributing! This monorepo contains the Privasys
 - Keep commits focused: one logical change per commit.
 - Write meaningful commit messages (e.g. `wallet: add batch auth flow`).
 - Use `bunx tsc --noEmit` to type-check the wallet and SDK before pushing.
+- Run `cd wallet && npx jest` to run the test suite.
 - Use `go vet ./...` in the broker directory.
 - Follow the existing code style in each sub-project.
 

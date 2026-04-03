@@ -51,6 +51,16 @@ All private keys stay on-device. The broker only relays opaque messages, it neve
 
 The wallet includes native Rust modules for RA-TLS verification. See [`.github/workflows/build-wallet.yaml`](.github/workflows/build-wallet.yaml) for the full CI/CD pipeline, including cross-compilation for iOS and Android.
 
+## Testing
+
+```bash
+cd wallet
+npx jest               # Run all tests
+npx jest --verbose     # With detailed output
+```
+
+The test suite covers the FIDO2 registration and authentication ceremonies, including wire format validation, WebAuthn compliance, and CBOR structure checks.
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)

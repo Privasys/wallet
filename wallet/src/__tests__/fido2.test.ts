@@ -55,7 +55,7 @@ let capturedRequests: Array<{ path: string; body: any }> = [];
 import * as fido2 from '../services/fido2';
 import * as NativeRaTls from '../../modules/native-ratls/src/index';
 import * as NativeKeys from '../../modules/native-keys/src/index';
-import { sha256 } from '@noble/hashes/sha2';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
