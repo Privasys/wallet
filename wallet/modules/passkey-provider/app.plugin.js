@@ -54,6 +54,14 @@ function withIosMainAppEntitlements(config) {
         return mod;
     });
 
+    // Credential provider entitlement (required on main app for the extension)
+    config = withEntitlementsPlist(config, (mod) => {
+        mod.modResults[
+            'com.apple.developer.authentication-services.autofill-credential-provider'
+        ] = true;
+        return mod;
+    });
+
     return config;
 }
 
