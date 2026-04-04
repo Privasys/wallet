@@ -140,6 +140,19 @@ export default (context: ConfigContext): ExpoConfig => {
                                             '$(AppIdentifierPrefix)org.privasys.shared'
                                         ]
                                     }
+                                },
+                                {
+                                    targetName: 'PasskeyProvider',
+                                    bundleIdentifier: `${config.bundle}.PasskeyProvider`,
+                                    entitlements: {
+                                        'com.apple.developer.authentication-services.autofill-credential-provider': true,
+                                        'keychain-access-groups': [
+                                            '$(AppIdentifierPrefix)org.privasys.shared'
+                                        ],
+                                        'com.apple.developer.associated-domains': [
+                                            'webcredentials:privasys.id'
+                                        ]
+                                    }
                                 }
                             ]
                         }
