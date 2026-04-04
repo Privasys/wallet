@@ -415,6 +415,57 @@ describe('wire format', () => {
     });
 });
 
+// ── AAGUID Enforcement Tests ────────────────────────────────────────────
+
+describe('AAGUID in attestation object', () => {
+    const PRIVASYS_AAGUID_HEX = 'f47ac10b58cc4372a5670e02b2c3d479';
+    const ORIGIN = 'example.privasys.org:8443';
+    const KEY_ALIAS = 'fido2-example.privasys.org';
+    const SESSION_ID = 'sess';
+
+    it('embeds the Privasys Wallet AAGUID in authenticatorData', async () => {
+        await fido2.register(ORIGIN, KEY_ALIAS, SESSION_ID);
+        capturedRequests = [...mockCapturedRequests];
+
+        const completeReq = capturedRequests.find(r => r.path === '/fido2/register/complete')!;
+        const attObj = base64urlDecode(completeReq.body.attestation_object);
+
+        // Find authData in the CBOR
+        const authDataKeyOffset = findCborText(attObj, 'authData');
+        expect(authDataKeyOffset).toBeGreaterThan(0);
+        const bstrOffset = authDataKeyOffset + 1 + 8;
+        const authDataOffset = parseCborBstrHeader(attObj, bstrOffset);
+
+        // AAGUID is at offset 37 within authData (after rpIdHash(32) + flags(1) + signCount(4))
+        const aaguidStart = authDataOffset.start + 37;
+        const aaguid = attObj.slice(aaguidStart, aaguidStart + 16);
+
+        const aaguidHex = Array.from(aaguid)
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+        expect(aaguidHex).toBe(PRIVASYS_AAGUID_HEX);
+    });
+
+    it('AAGUID is exactly 16 bytes at expected position', async () => {
+        await fido2.register(ORIGIN, KEY_ALIAS, SESSION_ID);
+        capturedRequests = [...mockCapturedRequests];
+
+        const completeReq = capturedRequests.find(r => r.path === '/fido2/register/complete')!;
+        const attObj = base64urlDecode(completeReq.body.attestation_object);
+
+        const authDataKeyOffset = findCborText(attObj, 'authData');
+        const bstrOffset = authDataKeyOffset + 1 + 8;
+        const authDataOffset = parseCborBstrHeader(attObj, bstrOffset);
+
+        // After AAGUID (16 bytes) comes credIdLen (2 bytes) then credentialId
+        const afterAaguid = authDataOffset.start + 37 + 16;
+        const credIdLen = (attObj[afterAaguid] << 8) | attObj[afterAaguid + 1];
+
+        // Credential ID should be 32 bytes (SHA-256 of the public key)
+        expect(credIdLen).toBe(32);
+    });
+});
+
 // ── CBOR Helpers ────────────────────────────────────────────────────────
 
 /** Find the offset of a CBOR text string key in a buffer. */

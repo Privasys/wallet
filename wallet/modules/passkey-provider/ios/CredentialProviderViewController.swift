@@ -5,6 +5,7 @@ import AuthenticationServices
 import CryptoKit
 import LocalAuthentication
 import Security
+import UIKit
 
 /// Shared keychain access group — shared between main app and extension.
 private let kKeychainGroupId = "group.org.privasys.wallet"
@@ -18,39 +19,255 @@ private let kAAGUID: [UInt8] = [
     0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79
 ]
 
+// MARK: - RA-TLS C FFI Bridge
+
+// Forward declarations for the native RA-TLS static library.
+// Linked from the same libratls_mobile.a used by the main app.
+@_silgen_name("ratls_inspect")
+func ratls_inspect(
+    _ host: UnsafePointer<CChar>,
+    _ port: Int32,
+    _ ca_cert_path: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("ratls_free_string")
+func ratls_free_string(_ ptr: UnsafeMutablePointer<CChar>?)
+
+/// Verify enclave attestation via RA-TLS. Returns parsed JSON or nil on failure.
+private func verifyEnclave(host: String, port: Int) -> [String: Any]? {
+    guard let result = host.withCString({ h in
+        ratls_inspect(h, Int32(port), nil)
+    }) else { return nil }
+
+    defer { ratls_free_string(result) }
+    let json = String(cString: result)
+
+    guard let data = json.data(using: .utf8),
+          let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return nil
+    }
+
+    if parsed["error"] != nil { return nil }
+    return parsed
+}
+
+// MARK: - Credential Provider View Controller
+
 /// Privasys Wallet Credential Provider Extension.
 ///
-/// iOS invokes this when a website calls `navigator.credentials.get()` and
-/// the RP ID matches a domain in the wallet's associated domains.
+/// iOS invokes this when a website calls `navigator.credentials.create()` or
+/// `navigator.credentials.get()` and the RP ID matches a domain associated
+/// with this app via webcredentials.
 ///
 /// Flow:
-/// 1. `prepareInterfaceForPasskeyAssertion` — receive the WebAuthn request
-/// 2. Check if RP ID matches a known Privasys enclave
-/// 3. If yes: verify enclave attestation via RA-TLS (calls C FFI)
-/// 4. Show compact attestation summary + biometric prompt
-/// 5. Sign the challenge with the hardware-bound key (Secure Enclave)
-/// 6. Return the signed assertion to the OS
-///
-/// For non-Privasys RPs: standard passkey flow (sign without attestation check).
+/// 1. Receive WebAuthn request from the OS
+/// 2. Verify enclave attestation via RA-TLS (calls C FFI)
+/// 3. Show compact attestation summary with approve/cancel
+/// 4. Biometric gate via Secure Enclave key access control
+/// 5. Sign the challenge with the hardware-bound key
+/// 6. Return the signed credential to the OS
 @available(iOS 17.0, *)
-class CredentialProviderViewController: ASCredentialProviderExtensionContext {
+class CredentialProviderViewController: ASCredentialProviderViewController {
+
+    // MARK: - UI Elements
+
+    private let statusLabel = UILabel()
+    private let detailLabel = UILabel()
+    private let approveButton = UIButton(type: .system)
+    private let cancelButton = UIButton(type: .system)
+    private let spinner = UIActivityIndicatorView(style: .large)
+
+    private var pendingRegistration: ASPasskeyCredentialRequest?
+    private var pendingAssertion: ASPasskeyCredentialRequest?
+    private var approvalCompletion: ((Bool) -> Void)?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        setupUI()
+    }
 
     // MARK: - Passkey Registration
 
-    func prepareInterfaceForPasskeyRegistration(
-        request: ASCredentialRequest
+    override func prepareInterfaceForPasskeyRegistration(
+        using request: ASCredentialRequest
     ) {
         guard let passkeyRequest = request as? ASPasskeyCredentialRequest else {
-            cancelRequest(error: ASExtensionError(.failed))
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
         let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
+        pendingRegistration = passkeyRequest
+
+        showVerifying(rpId: rpId)
+        verifyAndPrompt(rpId: rpId) { [weak self] approved in
+            guard let self, approved else {
+                self?.extensionContext.cancelRequest(withError: ASExtensionError(.userCanceled))
+                return
+            }
+            self.completeRegistration(passkeyRequest)
+        }
+    }
+
+    // MARK: - Passkey Assertion
+
+    override func prepareInterfaceForPasskeyAssertion(
+        using request: ASCredentialRequest
+    ) {
+        guard let passkeyRequest = request as? ASPasskeyCredentialRequest else {
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
+            return
+        }
+
+        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
+        let credentialIdData = passkeyRequest.credentialIdentity.credentialID
+
+        guard lookupKeyTag(rpId: rpId, credentialId: [UInt8](credentialIdData)) != nil else {
+            extensionContext.cancelRequest(withError: ASExtensionError(.credentialIdentityNotFound))
+            return
+        }
+
+        pendingAssertion = passkeyRequest
+
+        showVerifying(rpId: rpId)
+        verifyAndPrompt(rpId: rpId) { [weak self] approved in
+            guard let self, approved else {
+                self?.extensionContext.cancelRequest(withError: ASExtensionError(.userCanceled))
+                return
+            }
+            self.completeAssertion(passkeyRequest)
+        }
+    }
+
+    // MARK: - Credential List
+
+    override func prepareCredentialList(
+        for serviceIdentifiers: [ASCredentialServiceIdentifier]
+    ) {
+        let credentials = loadAllCredentials()
+        if credentials.isEmpty {
+            extensionContext.cancelRequest(withError: ASExtensionError(.credentialIdentityNotFound))
+        } else {
+            extensionContext.cancelRequest(withError: ASExtensionError(.userCanceled))
+        }
+    }
+
+    // MARK: - Attestation Verification
+
+    private func verifyAndPrompt(rpId: String, completion: @escaping (Bool) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let parts = rpId.split(separator: ":", maxSplits: 1)
+            let host = String(parts[0])
+            let port = parts.count > 1 ? Int(parts[1]) ?? 443 : 443
+
+            let attestation = verifyEnclave(host: host, port: port)
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                if let att = attestation, att["valid"] as? Bool == true {
+                    self.showAttestationResult(att, rpId: rpId, completion: completion)
+                } else {
+                    self.showAttestationFailed(rpId: rpId)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        completion(false)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - UI Setup
+
+    private func setupUI() {
+        statusLabel.font = .preferredFont(forTextStyle: .headline)
+        statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        detailLabel.font = .preferredFont(forTextStyle: .footnote)
+        detailLabel.textAlignment = .center
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.numberOfLines = 0
+        detailLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        approveButton.setTitle("Approve", for: .normal)
+        approveButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        approveButton.translatesAutoresizingMaskIntoConstraints = false
+        approveButton.isHidden = true
+        approveButton.addTarget(self, action: #selector(approveTapped), for: .touchUpInside)
+
+        cancelButton.setTitle("Cancel", for: .normal)
+        cancelButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        cancelButton.tintColor = .systemRed
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
+        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, detailLabel, approveButton, cancelButton])
+        stack.axis = .vertical
+        stack.spacing = 16
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32)
+        ])
+    }
+
+    @objc private func approveTapped() {
+        approvalCompletion?(true)
+        approvalCompletion = nil
+    }
+
+    @objc private func cancelTapped() {
+        approvalCompletion?(false)
+        approvalCompletion = nil
+    }
+
+    // MARK: - UI State
+
+    private func showVerifying(rpId: String) {
+        spinner.startAnimating()
+        statusLabel.text = "Verifying enclave…"
+        detailLabel.text = rpId
+        approveButton.isHidden = true
+    }
+
+    private func showAttestationResult(_ att: [String: Any], rpId: String, completion: @escaping (Bool) -> Void) {
+        spinner.stopAnimating()
+        statusLabel.text = "Enclave Verified ✓"
+
+        var lines: [String] = [rpId]
+        if let tee = att["tee_type"] as? String { lines.append("TEE: \(tee)") }
+        if let hash = att["code_hash"] as? String { lines.append("Code: \(hash.prefix(16))…") }
+        detailLabel.text = lines.joined(separator: "\n")
+
+        approveButton.isHidden = false
+        approvalCompletion = completion
+    }
+
+    private func showAttestationFailed(rpId: String) {
+        spinner.stopAnimating()
+        statusLabel.text = "Attestation Failed"
+        detailLabel.text = "\(rpId)\nCould not verify enclave integrity."
+        approveButton.isHidden = true
+    }
+
+    // MARK: - Registration Completion
+
+    private func completeRegistration(_ passkeyRequest: ASPasskeyCredentialRequest) {
+        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
         let clientDataHash = passkeyRequest.clientDataHash
 
-        // Generate a new P-256 key in the Secure Enclave
         guard let keyPair = generateSecureEnclaveKey(rpId: rpId) else {
-            cancelRequest(error: ASExtensionError(.failed))
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
@@ -72,10 +289,8 @@ class CredentialProviderViewController: ASCredentialProviderExtensionContext {
         authData.append(credIdBytes)
         authData.append(buildCoseKey(publicKeyData: publicKeyData))
 
-        // Build attestation object (fmt: "none")
         let attestationObject = buildAttestationObjectCBOR(authData: authData)
 
-        // Store credential mapping in shared keychain
         storeCredential(rpId: rpId, credentialId: credentialId, keyTag: keyPair.keyTag)
 
         let credential = ASPasskeyRegistrationCredential(
@@ -85,32 +300,23 @@ class CredentialProviderViewController: ASCredentialProviderExtensionContext {
             attestationObject: attestationObject
         )
 
-        completeRegistrationRequest(using: credential)
+        extensionContext.completeRegistrationRequest(using: credential)
     }
 
-    // MARK: - Passkey Assertion (Sign-In)
+    // MARK: - Assertion Completion
 
-    func prepareInterfaceForPasskeyAssertion(
-        request: ASCredentialRequest
-    ) {
-        guard let passkeyRequest = request as? ASPasskeyCredentialRequest else {
-            cancelRequest(error: ASExtensionError(.failed))
-            return
-        }
-
+    private func completeAssertion(_ passkeyRequest: ASPasskeyCredentialRequest) {
         let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
         let clientDataHash = passkeyRequest.clientDataHash
         let credentialIdData = passkeyRequest.credentialIdentity.credentialID
 
-        // Look up the key tag for this credential
         guard let keyTag = lookupKeyTag(rpId: rpId, credentialId: [UInt8](credentialIdData)) else {
-            cancelRequest(error: ASExtensionError(.credentialIdentityNotFound))
+            extensionContext.cancelRequest(withError: ASExtensionError(.credentialIdentityNotFound))
             return
         }
 
-        // Retrieve the private key from the Secure Enclave
         guard let privateKey = loadSecureEnclaveKey(keyTag: keyTag) else {
-            cancelRequest(error: ASExtensionError(.failed))
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
@@ -126,12 +332,14 @@ class CredentialProviderViewController: ASCredentialProviderExtensionContext {
         signInput.append(clientDataHash)
 
         guard let signature = signWithSecureEnclave(privateKey: privateKey, data: signInput) else {
-            cancelRequest(error: ASExtensionError(.failed))
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
+        let userHandle = lookupUserHandle(rpId: rpId, credentialId: [UInt8](credentialIdData))
+
         let credential = ASPasskeyAssertionCredential(
-            userHandle: Data(), // Extension doesn't have userHandle, RP resolves from credentialId
+            userHandle: userHandle,
             relyingParty: rpId,
             signature: signature,
             clientDataHash: clientDataHash,
@@ -139,16 +347,7 @@ class CredentialProviderViewController: ASCredentialProviderExtensionContext {
             credentialID: credentialIdData
         )
 
-        completeAssertionRequest(using: credential)
-    }
-
-    // MARK: - Credential List (shown when user picks from provider list)
-
-    func prepareCredentialList(
-        for serviceIdentifiers: [ASCredentialServiceIdentifier]
-    ) {
-        // Query shared keychain for credentials matching serviceIdentifiers
-        // For now, complete with no credentials — the main app handles discovery
+        extensionContext.completeAssertionRequest(using: credential)
     }
 
     // MARK: - Secure Enclave Key Management
@@ -322,9 +521,47 @@ class CredentialProviderViewController: ASCredentialProviderExtensionContext {
         return cbor
     }
 
-    // MARK: - Helpers
+    // MARK: - Credential Query
 
-    private func cancelRequest(error: Error) {
-        // Extension context cancel
+    private func loadAllCredentials() -> [[String: Any]] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: kCredentialService,
+            kSecAttrAccessGroup as String: kKeychainGroupId,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+
+        var items: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &items)
+        guard status == errSecSuccess, let dataArray = items as? [Data] else { return [] }
+
+        return dataArray.compactMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+    }
+
+    private func lookupUserHandle(rpId: String, credentialId: [UInt8]) -> Data {
+        let account = "\(rpId):\(Data(credentialId).base64EncodedString())"
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: kCredentialService,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessGroup as String: kKeychainGroupId,
+            kSecReturnData as String: true
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let userHandleB64 = entry["userHandle"] as? String,
+              let userHandleData = Data(base64Encoded: userHandleB64) else {
+            return Data()
+        }
+
+        return userHandleData
     }
 }

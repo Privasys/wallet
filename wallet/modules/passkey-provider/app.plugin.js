@@ -10,16 +10,23 @@ const {
     withEntitlementsPlist,
     withInfoPlist,
     withAndroidManifest,
+    withXcodeProject,
+    withDangerousMod,
     AndroidConfig,
     IOSConfig,
 } = require('expo/config-plugins');
+const path = require('path');
+const fs = require('fs');
 
 const SERVICE_CLASS =
     'org.privasys.wallet.passkey.PrivasysCredentialProviderService';
 
-// ── iOS: entitlements + Info.plist for ASCredentialProviderExtension ───
+const EXTENSION_NAME = 'PasskeyProvider';
+const EXTENSION_BUNDLE_ID_SUFFIX = '.PasskeyProvider';
 
-function withIosPasskeyExtension(config) {
+// ── iOS: main app entitlements ────────────────────────────────────────
+
+function withIosMainAppEntitlements(config) {
     // Shared keychain group
     config = withEntitlementsPlist(config, (mod) => {
         const bundleId =
@@ -47,12 +54,150 @@ function withIosPasskeyExtension(config) {
         return mod;
     });
 
-    // NOTE: NSExtension for credential provider UI requires a separate
-    // Xcode extension target. Adding it to the main app Info.plist causes
-    // Apple validation to reject the IPA. The extension target will be
-    // added in a future update.
-
     return config;
+}
+
+// ── iOS: copy extension source files ──────────────────────────────────
+
+function withIosExtensionFiles(config) {
+    return withDangerousMod(config, [
+        'ios',
+        async (config) => {
+            const platformRoot = config.modRequest.platformProjectRoot;
+            const extensionDir = path.join(platformRoot, EXTENSION_NAME);
+
+            if (!fs.existsSync(extensionDir)) {
+                fs.mkdirSync(extensionDir, { recursive: true });
+            }
+
+            const srcDir = path.join(
+                config.modRequest.projectRoot,
+                'modules',
+                'passkey-provider',
+                'ios',
+            );
+
+            // Copy Swift source, Info.plist, and entitlements
+            const files = [
+                ['CredentialProviderViewController.swift', 'CredentialProviderViewController.swift'],
+                ['PasskeyProvider-Info.plist', 'Info.plist'],
+                ['PasskeyProvider.entitlements', `${EXTENSION_NAME}.entitlements`],
+            ];
+
+            for (const [src, dst] of files) {
+                const srcFile = path.join(srcDir, src);
+                if (fs.existsSync(srcFile)) {
+                    fs.copyFileSync(srcFile, path.join(extensionDir, dst));
+                }
+            }
+
+            return config;
+        },
+    ]);
+}
+
+// ── iOS: add extension target to Xcode project ───────────────────────
+
+function withIosExtensionTarget(config) {
+    return withXcodeProject(config, async (config) => {
+        const project = config.modResults;
+        const mainBundleId =
+            config.ios?.bundleIdentifier || 'org.privasys.wallet';
+        const extBundleId = `${mainBundleId}${EXTENSION_BUNDLE_ID_SUFFIX}`;
+
+        // Prevent duplicate target if plugin runs twice
+        const existingTargets = project.pbxNativeTargetSection();
+        for (const key in existingTargets) {
+            const t = existingTargets[key];
+            if (
+                typeof t === 'object' &&
+                t.name === `"${EXTENSION_NAME}"`
+            ) {
+                return config;
+            }
+        }
+
+        // Create the extension target
+        const target = project.addTarget(
+            EXTENSION_NAME,
+            'app_extension',
+            EXTENSION_NAME,
+            extBundleId,
+        );
+
+        // Add source build phase
+        project.addBuildPhase(
+            ['CredentialProviderViewController.swift'],
+            'PBXSourcesBuildPhase',
+            'Sources',
+            target.uuid,
+        );
+
+        // Add frameworks build phase
+        project.addBuildPhase(
+            [],
+            'PBXFrameworksBuildPhase',
+            'Frameworks',
+            target.uuid,
+        );
+
+        // Add resources build phase
+        project.addBuildPhase(
+            [],
+            'PBXResourcesBuildPhase',
+            'Resources',
+            target.uuid,
+        );
+
+        // Configure build settings for the extension
+        const targetObj =
+            project.pbxNativeTargetSection()[target.uuid];
+        if (targetObj) {
+            const configListUuid = targetObj.buildConfigurationList;
+            const configLists = project.pbxXCConfigurationList();
+            const configList = configLists[configListUuid];
+
+            if (configList && configList.buildConfigurations) {
+                const allConfigs =
+                    project.pbxXCBuildConfigurationSection();
+
+                for (const { value } of configList.buildConfigurations) {
+                    const bc = allConfigs[value];
+                    if (!bc || !bc.buildSettings) continue;
+
+                    Object.assign(bc.buildSettings, {
+                        INFOPLIST_FILE: `"${EXTENSION_NAME}/Info.plist"`,
+                        CODE_SIGN_ENTITLEMENTS: `"${EXTENSION_NAME}/${EXTENSION_NAME}.entitlements"`,
+                        SWIFT_VERSION: '5.0',
+                        IPHONEOS_DEPLOYMENT_TARGET: '17.0',
+                        TARGETED_DEVICE_FAMILY: '"1,2"',
+                        GENERATE_INFOPLIST_FILE: 'NO',
+                        CURRENT_PROJECT_VERSION: '1',
+                        MARKETING_VERSION: '1.0',
+                        SKIP_INSTALL: 'YES',
+                        CODE_SIGN_STYLE: 'Automatic',
+                        PRODUCT_BUNDLE_IDENTIFIER: `"${extBundleId}"`,
+                    });
+                }
+            }
+        }
+
+        // Add target dependency — main app embeds the extension
+        const nativeTargets = project.pbxNativeTargetSection();
+        for (const key in nativeTargets) {
+            const nt = nativeTargets[key];
+            if (
+                typeof nt === 'object' &&
+                nt.productType ===
+                    '"com.apple.product-type.application"'
+            ) {
+                project.addTargetDependency(key, [target.uuid]);
+                break;
+            }
+        }
+
+        return config;
+    });
 }
 
 // ── Android: register CredentialProviderService in manifest ───────────
@@ -100,6 +245,25 @@ function withAndroidCredentialProvider(config) {
             mainApp.service = services;
         }
 
+        // Register the PasskeyActivity
+        const activities = mainApp.activity || [];
+        const ACTIVITY_CLASS =
+            'org.privasys.wallet.passkey.PasskeyActivity';
+        const activityExists = activities.some(
+            (a) => a.$?.['android:name'] === ACTIVITY_CLASS,
+        );
+
+        if (!activityExists) {
+            activities.push({
+                $: {
+                    'android:name': ACTIVITY_CLASS,
+                    'android:exported': 'false',
+                    'android:theme': '@android:style/Theme.Translucent.NoTitleBar',
+                },
+            });
+            mainApp.activity = activities;
+        }
+
         return mod;
     });
 
@@ -110,7 +274,9 @@ function withAndroidCredentialProvider(config) {
 
 function withPasskeyProvider(config) {
     return withPlugins(config, [
-        withIosPasskeyExtension,
+        withIosMainAppEntitlements,
+        withIosExtensionFiles,
+        withIosExtensionTarget,
         withAndroidCredentialProvider,
     ]);
 }

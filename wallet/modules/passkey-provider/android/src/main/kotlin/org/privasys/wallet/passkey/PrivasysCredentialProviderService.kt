@@ -83,8 +83,10 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
                     "Privasys Wallet",
                     android.app.PendingIntent.getActivity(
                         applicationContext, 0,
-                        android.content.Intent(),
-                        android.app.PendingIntent.FLAG_IMMUTABLE
+                        android.content.Intent(applicationContext, PasskeyActivity::class.java).apply {
+                            putExtra(PasskeyActivity.EXTRA_ACTION, PasskeyActivity.ACTION_CREATE)
+                        },
+                        android.app.PendingIntent.FLAG_MUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
                     )
                 ).build()
             )
@@ -184,9 +186,13 @@ class PrivasysCredentialProviderService : CredentialProviderService() {
                             applicationContext,
                             rpId,
                             android.app.PendingIntent.getActivity(
-                                applicationContext, 0,
-                                android.content.Intent(),
-                                android.app.PendingIntent.FLAG_IMMUTABLE
+                                applicationContext, entries.size,
+                                android.content.Intent(applicationContext, PasskeyActivity::class.java).apply {
+                                    putExtra(PasskeyActivity.EXTRA_ACTION, PasskeyActivity.ACTION_GET)
+                                    putExtra("rpId", rpId)
+                                    putExtra("credentialId", entry.getString("credentialId"))
+                                },
+                                android.app.PendingIntent.FLAG_MUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
                             ),
                             beginOption
                         ).build()
