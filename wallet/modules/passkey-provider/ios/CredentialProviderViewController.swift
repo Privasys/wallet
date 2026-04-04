@@ -92,12 +92,13 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
     override func prepareInterface(
         forPasskeyRegistration registrationRequest: any ASCredentialRequest
     ) {
-        guard let passkeyRequest = registrationRequest as? ASPasskeyCredentialRequest else {
+        guard let passkeyRequest = registrationRequest as? ASPasskeyCredentialRequest,
+              let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity else {
             extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
-        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
+        let rpId = identity.relyingPartyIdentifier
         pendingRegistration = passkeyRequest
 
         showVerifying(rpId: rpId)
@@ -115,13 +116,14 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
     override func prepareInterfaceToProvideCredential(
         for credentialRequest: ASCredentialRequest
     ) {
-        guard let passkeyRequest = credentialRequest as? ASPasskeyCredentialRequest else {
+        guard let passkeyRequest = credentialRequest as? ASPasskeyCredentialRequest,
+              let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity else {
             extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
 
-        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
-        let credentialIdData = passkeyRequest.credentialIdentity.credentialID
+        let rpId = identity.relyingPartyIdentifier
+        let credentialIdData = identity.credentialID
 
         guard lookupKeyTag(rpId: rpId, credentialId: [UInt8](credentialIdData)) != nil else {
             extensionContext.cancelRequest(withError: ASExtensionError(.credentialIdentityNotFound))
@@ -263,7 +265,11 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
     // MARK: - Registration Completion
 
     private func completeRegistration(_ passkeyRequest: ASPasskeyCredentialRequest) {
-        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
+        guard let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity else {
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
+            return
+        }
+        let rpId = identity.relyingPartyIdentifier
         let clientDataHash = passkeyRequest.clientDataHash
 
         guard let keyPair = generateSecureEnclaveKey(rpId: rpId) else {
@@ -306,9 +312,13 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
     // MARK: - Assertion Completion
 
     private func completeAssertion(_ passkeyRequest: ASPasskeyCredentialRequest) {
-        let rpId = passkeyRequest.credentialIdentity.relyingPartyIdentifier
+        guard let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity else {
+            extensionContext.cancelRequest(withError: ASExtensionError(.failed))
+            return
+        }
+        let rpId = identity.relyingPartyIdentifier
         let clientDataHash = passkeyRequest.clientDataHash
-        let credentialIdData = passkeyRequest.credentialIdentity.credentialID
+        let credentialIdData = identity.credentialID
 
         guard let keyTag = lookupKeyTag(rpId: rpId, credentialId: [UInt8](credentialIdData)) else {
             extensionContext.cancelRequest(withError: ASExtensionError(.credentialIdentityNotFound))
