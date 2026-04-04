@@ -89,10 +89,10 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
 
     // MARK: - Passkey Registration
 
-    override func prepareInterfaceForPasskeyRegistration(
-        using request: ASCredentialRequest
+    override func prepareInterface(
+        forPasskeyRegistration registrationRequest: any ASCredentialRequest
     ) {
-        guard let passkeyRequest = request as? ASPasskeyCredentialRequest else {
+        guard let passkeyRequest = registrationRequest as? ASPasskeyCredentialRequest else {
             extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
@@ -112,10 +112,10 @@ class CredentialProviderViewController: ASCredentialProviderViewController {
 
     // MARK: - Passkey Assertion
 
-    override func prepareInterfaceForPasskeyAssertion(
-        using request: ASCredentialRequest
+    override func prepareInterfaceToProvideCredential(
+        for credentialRequest: ASCredentialRequest
     ) {
-        guard let passkeyRequest = request as? ASPasskeyCredentialRequest else {
+        guard let passkeyRequest = credentialRequest as? ASPasskeyCredentialRequest else {
             extensionContext.cancelRequest(withError: ASExtensionError(.failed))
             return
         }
