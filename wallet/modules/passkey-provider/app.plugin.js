@@ -125,9 +125,20 @@ function withIosExtensionTarget(config) {
             extBundleId,
         );
 
-        // Add source build phase
+        // Add an empty PBXGroup so Xcode resolves file paths
+        // relative to the extension folder.
+        const group = project.addPbxGroup(
+            [],
+            EXTENSION_NAME,
+            EXTENSION_NAME,
+        );
+        const mainGroup =
+            project.getFirstProject().firstProject.mainGroup;
+        project.addToPbxGroup(group.uuid, mainGroup);
+
+        // Add source build phase — use full path from project root
         project.addBuildPhase(
-            ['CredentialProviderViewController.swift'],
+            [`${EXTENSION_NAME}/CredentialProviderViewController.swift`],
             'PBXSourcesBuildPhase',
             'Sources',
             target.uuid,
