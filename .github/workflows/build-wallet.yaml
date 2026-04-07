@@ -331,7 +331,11 @@ jobs:
 
   # ─── Submit to TestFlight ─────────────────────────────────────────
   submit-testflight:
-    if: github.event_name == 'push'
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       !inputs.use_eas_cloud &&
+       (inputs.platform == 'ios' || inputs.platform == 'all'))
     needs: [build-local-ios]
     runs-on: ubuntu-latest
     steps:
