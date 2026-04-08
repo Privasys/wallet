@@ -3,11 +3,15 @@ plugins {
     id 'expo-module-gradle-plugin'
 }
 
+version = '0.1.0'
+
 android {
     namespace "org.privasys.appattest"
 
     defaultConfig {
         minSdk 26
+        versionCode 1
+        versionName '0.1.0'
     }
 }
 
