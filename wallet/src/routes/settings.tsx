@@ -5,7 +5,8 @@
  * Settings screen — manage wallet configuration.
  */
 
-import { Stack } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Stack, useRouter } from 'expo-router';
 import { StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
@@ -14,6 +15,7 @@ import { useSettingsStore, GRACE_OPTIONS } from '@/stores/settings';
 import { useTrustedAppsStore } from '@/stores/trusted-apps';
 
 export default function SettingsScreen() {
+    const router = useRouter();
     const { credentials, removeCredential } = useAuthStore();
     const { gracePeriodSec, setGracePeriod } = useSettingsStore();
     const { apps, remove: removeTrustedApp } = useTrustedAppsStore();
@@ -42,8 +44,20 @@ export default function SettingsScreen() {
 
     return (
         <>
-            <Stack.Screen options={{ title: 'Settings' }} />
-            <ScrollView contentContainerStyle={styles.content}>
+            <Stack.Screen
+                options={{
+                    headerShown: true,
+                    title: 'Settings',
+                    headerLeft: () => (
+                        <Pressable onPress={() => router.back()} hitSlop={8}>
+                            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+                        </Pressable>
+                    ),
+                    headerShadowVisible: false,
+                    headerStyle: { backgroundColor: '#F8FAFB' }
+                }}
+            />
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
                 {/* Grace Period */}
                 <Text style={styles.sectionTitle}>Biometric Grace Period</Text>
                 <Text style={styles.sectionDescription}>
@@ -75,7 +89,10 @@ export default function SettingsScreen() {
                 {/* Registered Credentials */}
                 <Text style={styles.sectionTitle}>Registered Credentials</Text>
                 {credentials.length === 0 ? (
-                    <Text style={styles.emptyText}>No credentials registered yet.</Text>
+                    <View style={styles.emptyCard}>
+                        <Ionicons name="key-outline" size={32} color="#C7C7CC" />
+                        <Text style={styles.emptyText}>No credentials registered yet</Text>
+                    </View>
                 ) : (
                     credentials.map((cred) => (
                         <View key={cred.credentialId} style={styles.credentialCard}>
@@ -112,8 +129,10 @@ export default function SettingsScreen() {
                 )}
 
                 {/* Danger Zone */}
-                <View style={styles.dangerZone}>
+                <View style={styles.dangerSection}>
+                    <Text style={styles.dangerTitle}>Danger Zone</Text>
                     <Pressable style={styles.dangerButton} onPress={handleClearAll}>
+                        <Ionicons name="trash-outline" size={18} color="#FF3B30" />
                         <Text style={styles.dangerButtonText}>Clear All Data</Text>
                     </Pressable>
                 </View>
@@ -123,10 +142,31 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-    content: { padding: 20, paddingTop: 16 },
-    sectionTitle: { fontSize: 18, fontWeight: '600', marginTop: 24, marginBottom: 8 },
-    sectionDescription: { fontSize: 14, opacity: 0.6, marginBottom: 12, lineHeight: 20 },
-    emptyText: { fontSize: 14, opacity: 0.5, fontStyle: 'italic', marginBottom: 16 },
+    scroll: { flex: 1, backgroundColor: '#F8FAFB' },
+    content: { padding: 20, paddingTop: 8, paddingBottom: 40 },
+    sectionTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#0F172A',
+        marginTop: 24,
+        marginBottom: 6
+    },
+    sectionDescription: {
+        fontSize: 14,
+        color: '#64748B',
+        marginBottom: 14,
+        lineHeight: 20
+    },
+    emptyCard: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 24,
+        gap: 8,
+        marginBottom: 8
+    },
+    emptyText: { fontSize: 14, color: '#C7C7CC' },
 
     optionsRow: {
         flexDirection: 'row',
@@ -136,34 +176,55 @@ const styles = StyleSheet.create({
     optionButton: {
         flex: 1,
         paddingVertical: 10,
-        borderRadius: 8,
-        backgroundColor: 'rgba(128,128,128,0.15)',
-        alignItems: 'center'
+        borderRadius: 10,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#E2E8F0'
     },
-    optionButtonActive: { backgroundColor: '#007AFF' },
-    optionText: { fontSize: 15, fontWeight: '500' },
+    optionButtonActive: {
+        backgroundColor: '#007AFF',
+        borderColor: '#007AFF'
+    },
+    optionText: { fontSize: 15, fontWeight: '500', color: '#0F172A' },
     optionTextActive: { color: '#fff' },
 
     credentialCard: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(128,128,128,0.1)',
-        borderRadius: 10,
-        padding: 14,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 16,
         marginBottom: 8
     },
     credentialInfo: { flex: 1, backgroundColor: 'transparent' },
-    credentialRp: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
-    credentialMeta: { fontSize: 12, opacity: 0.5 },
+    credentialRp: { fontSize: 15, fontWeight: '600', color: '#0F172A', marginBottom: 2 },
+    credentialMeta: { fontSize: 12, color: '#64748B' },
     removeButton: { color: '#FF3B30', fontSize: 14, fontWeight: '500' },
 
-    dangerZone: { marginTop: 40, alignItems: 'center' },
+    dangerSection: {
+        marginTop: 40,
+        alignItems: 'center',
+        gap: 12
+    },
+    dangerTitle: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#94A3B8',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5
+    },
     dangerButton: {
-        backgroundColor: '#FF3B30',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#FFF1F0',
         borderRadius: 12,
         paddingVertical: 14,
-        paddingHorizontal: 40
+        paddingHorizontal: 32,
+        borderWidth: 1,
+        borderColor: '#FECACA'
     },
-    dangerButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' }
+    dangerButtonText: { color: '#FF3B30', fontSize: 16, fontWeight: '600' }
 });

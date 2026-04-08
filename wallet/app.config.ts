@@ -1,3 +1,5 @@
+import { execSync } from 'child_process';
+
 import { ExpoConfig, ConfigContext } from '@expo/config';
 import 'dotenv/config';
 
@@ -59,6 +61,15 @@ const envConfig = {
 };
 
 const config = envConfig[STAGE as keyof typeof envConfig];
+
+function getCommitHash(): string {
+    if (process.env.EAS_BUILD_GIT_COMMIT_HASH) return process.env.EAS_BUILD_GIT_COMMIT_HASH;
+    try {
+        return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+    } catch {
+        return '';
+    }
+}
 
 export default (context: ConfigContext): ExpoConfig => {
     const { config: defaultConfig } = context;
@@ -125,7 +136,7 @@ export default (context: ConfigContext): ExpoConfig => {
                 process.env.EAS_BUILD_IOS_BUILD_NUMBER ??
                 process.env.EAS_BUILD_ANDROID_VERSION_CODE ??
                 '0',
-            COMMIT_HASH: process.env.EAS_BUILD_GIT_COMMIT_HASH,
+            COMMIT_HASH: getCommitHash(),
             eas: {
                 projectId: EXPO_PROJECT_ID,
                 build: {

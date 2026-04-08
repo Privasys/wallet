@@ -361,6 +361,9 @@ function AttestationView({
     onApprove: () => void;
     onReject: () => void;
 }) {
+    const appType = attestation.tee_type === 'sgx' ? 'WASM Application' : 'Container Application';
+    const teeColor = attestation.tee_type === 'sgx' ? '#34E89E' : '#00BCF2';
+
     return (
         <ScrollView contentContainerStyle={styles.attestationContainer}>
             {isChanged && (
@@ -374,13 +377,67 @@ function AttestationView({
             <Text style={styles.title}>{isChanged ? 'App Changed' : 'Verify Enclave'}</Text>
             <Text style={styles.subtitle}>{rpId}</Text>
 
+            {/* Verification Status */}
+            <View
+                style={[
+                    styles.statusBanner,
+                    attestation.valid ? styles.statusBannerValid : styles.statusBannerInvalid
+                ]}
+            >
+                <Text style={styles.statusIcon}>{attestation.valid ? '✓' : '✕'}</Text>
+                <View style={styles.statusInfo}>
+                    <Text
+                        style={[
+                            styles.statusTitle,
+                            attestation.valid
+                                ? styles.statusTitleValid
+                                : styles.statusTitleInvalid
+                        ]}
+                    >
+                        {attestation.valid ? 'Attestation Valid' : 'Attestation Invalid'}
+                    </Text>
+                    <Text style={styles.statusDetail}>
+                        {appType} · {attestation.tee_type?.toUpperCase()} enclave
+                    </Text>
+                </View>
+                <View style={[styles.teeBadge, { backgroundColor: teeColor }]}>
+                    <Text style={styles.teeBadgeText}>{attestation.tee_type?.toUpperCase()}</Text>
+                </View>
+            </View>
+
+            {/* Verification Details */}
+            <Text style={styles.sectionHeader}>Verification</Text>
             <View style={styles.attestationCard}>
-                <AttestationRow label="TEE Type" value={attestation.tee_type?.toUpperCase()} />
-                <AttestationRow label="Valid" value={attestation.valid ? '✓ Yes' : '✕ No'} />
+                {attestation.quote_verification_status && (
+                    <AttestationRow
+                        label="Quote Status"
+                        value={attestation.quote_verification_status}
+                    />
+                )}
+                {attestation.attestation_servers_hash && (
+                    <AttestationRow
+                        label="Attestation Server"
+                        value={truncateHex(attestation.attestation_servers_hash)}
+                    />
+                )}
+                {attestation.dek_origin && (
+                    <AttestationRow label="DEK Origin" value={attestation.dek_origin} />
+                )}
+            </View>
+
+            {/* Enclave Identity */}
+            <Text style={styles.sectionHeader}>Enclave Identity</Text>
+            <View style={styles.attestationCard}>
                 {attestation.mrenclave && (
                     <AttestationRow
                         label="MRENCLAVE"
                         value={truncateHex(attestation.mrenclave)}
+                    />
+                )}
+                {attestation.mrsigner && (
+                    <AttestationRow
+                        label="MRSIGNER"
+                        value={truncateHex(attestation.mrsigner)}
                     />
                 )}
                 {attestation.mrtd && (
@@ -398,16 +455,43 @@ function AttestationView({
                         value={truncateHex(attestation.config_merkle_root)}
                     />
                 )}
-                {attestation.quote_verification_status && (
-                    <AttestationRow
-                        label="Quote Verification"
-                        value={attestation.quote_verification_status}
-                    />
-                )}
-                <AttestationRow label="Certificate" value={attestation.cert_subject} />
+            </View>
+
+            {/* Certificate */}
+            <Text style={styles.sectionHeader}>Certificate</Text>
+            <View style={styles.attestationCard}>
+                <AttestationRow label="Subject" value={attestation.cert_subject} />
                 <AttestationRow label="Valid From" value={attestation.cert_not_before} />
                 <AttestationRow label="Valid Until" value={attestation.cert_not_after} />
             </View>
+
+            {/* Advisory IDs */}
+            {attestation.advisory_ids && attestation.advisory_ids.length > 0 && (
+                <>
+                    <Text style={styles.sectionHeader}>Advisories</Text>
+                    <View style={styles.attestationCard}>
+                        {attestation.advisory_ids.map((id) => (
+                            <AttestationRow key={id} label={id} value="Known advisory" />
+                        ))}
+                    </View>
+                </>
+            )}
+
+            {/* Custom OIDs */}
+            {attestation.custom_oids && attestation.custom_oids.length > 0 && (
+                <>
+                    <Text style={styles.sectionHeader}>Custom Extensions</Text>
+                    <View style={styles.attestationCard}>
+                        {attestation.custom_oids.map((oid) => (
+                            <AttestationRow
+                                key={oid.oid}
+                                label={oid.label || oid.oid}
+                                value={truncateHex(oid.value_hex)}
+                            />
+                        ))}
+                    </View>
+                </>
+            )}
 
             <View style={styles.buttonRow}>
                 <Pressable style={styles.rejectButton} onPress={onReject}>
@@ -460,7 +544,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         paddingHorizontal: 20
     },
-    attestationContainer: { padding: 20, paddingTop: 80 },
+    attestationContainer: { padding: 20, paddingTop: 80, paddingBottom: 40 },
     warningBanner: {
         backgroundColor: '#FFF3CD',
         borderRadius: 8,
@@ -468,11 +552,42 @@ const styles = StyleSheet.create({
         marginBottom: 16
     },
     warningText: { color: '#856404', fontSize: 14, textAlign: 'center' },
-    attestationCard: {
-        backgroundColor: 'rgba(128,128,128,0.1)',
+    statusBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
         borderRadius: 12,
         padding: 16,
-        marginBottom: 24
+        marginBottom: 24,
+        gap: 12
+    },
+    statusBannerValid: { backgroundColor: '#E8FFF0' },
+    statusBannerInvalid: { backgroundColor: '#FFF1F0' },
+    statusIcon: { fontSize: 28, fontWeight: '700' },
+    statusInfo: { flex: 1, backgroundColor: 'transparent' },
+    statusTitle: { fontSize: 16, fontWeight: '700' },
+    statusTitleValid: { color: '#166534' },
+    statusTitleInvalid: { color: '#991B1B' },
+    statusDetail: { fontSize: 13, color: '#64748B', marginTop: 2 },
+    teeBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6
+    },
+    teeBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+    sectionHeader: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#94A3B8',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 8,
+        marginTop: 4
+    },
+    attestationCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16
     },
     attestationRow: {
         flexDirection: 'row',

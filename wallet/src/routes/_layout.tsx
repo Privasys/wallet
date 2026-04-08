@@ -5,11 +5,12 @@ import { useFonts } from 'expo-font';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-get-random-values';
 import 'react-native-reanimated';
 
+import { SplashAnimation } from '@/components/SplashAnimation';
 import { useColorScheme } from '@/components/useColorScheme';
 import { useDeviceUuid } from '@/hooks/useDeviceUuid';
 import { useExpoPushToken } from '@/hooks/useExpoPushToken';
@@ -79,6 +80,7 @@ export default function RootLayout() {
 
     const isOnboarded = useAuthStore((s) => s.isOnboarded);
     const [storesReady, setStoresReady] = useState(false);
+    const [showSplashAnim, setShowSplashAnim] = useState(true);
 
     // Hydrate persisted stores on app launch
     useEffect(() => {
@@ -103,15 +105,25 @@ export default function RootLayout() {
 
     useEffect(() => {
         if (loaded && storesReady) {
+            // Hide native splash — our custom animation overlay takes over
             SplashScreen.hideAsync();
         }
     }, [loaded, storesReady]);
+
+    const onSplashComplete = useCallback(() => {
+        setShowSplashAnim(false);
+    }, []);
 
     if (!loaded || !storesReady) {
         return null;
     }
 
-    return <RootLayoutNav isOnboarded={isOnboarded} />;
+    return (
+        <>
+            <RootLayoutNav isOnboarded={isOnboarded} />
+            {showSplashAnim && <SplashAnimation onComplete={onSplashComplete} />}
+        </>
+    );
 }
 
 function KeepAwake() {
