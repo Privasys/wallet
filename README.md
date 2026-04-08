@@ -22,6 +22,7 @@ A mobile authenticator for the [Privasys](https://privasys.org) confidential com
 
 - **RA-TLS attestation** — Native Rust module verifies SGX/TDX enclave certificates on-device
 - **Hardware-bound FIDO2** — P-256 keys in Secure Enclave (iOS) / StrongBox (Android)
+- **App attestation** — iOS App Attest / Android Play Integrity proves app integrity to the attestation server
 - **Trusted apps** — Trust-on-first-use with change detection (like SSH `known_hosts`)
 - **Biometric grace period** — Skip re-prompt for trusted apps within configurable window
 - **Batch auth** — Verify and sign in to multiple enclaves with a single biometric prompt
@@ -53,6 +54,8 @@ cd broker
 go build -o auth-broker ./cmd/broker
 ./auth-broker      # Listens on :8090
 ```
+
+See [broker/README.md](broker/README.md) for configuration, app-token endpoints, and deployment.
 
 ## How It Works
 
