@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Splash Animation Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh;
+    background: #1a1a2e; font-family: system-ui, sans-serif; color: #fff; gap: 24px;
+  }
+  h2 { font-weight: 400; font-size: 14px; opacity: 0.6; letter-spacing: 0.5px; }
+
+  .phone-frame {
+    width: 280px; height: 560px; border: 3px solid #444; border-radius: 36px;
+    overflow: hidden; position: relative; background: #f8f8f8;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .phone-frame::before {
+    content: ''; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    width: 80px; height: 20px; background: #222; border-radius: 12px; z-index: 100;
+  }
+
+  .app-content {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; flex-direction: column; gap: 8px; background: #f8f8f8;
+  }
+  .app-content span { font-size: 13px; color: #888; }
+  .app-content .logo { font-size: 28px; font-weight: 700; color: #222; }
+
+  /*
+   * Phone: W=280, H=560.
+   * 135° diagonal through center (140,280): y = -x + 420
+   *   Right edge (x=280): y=140 → 25%
+   *   Left edge  (x=0):   y=420 → 75%
+   *
+   * Gap: ~20px perpendicular → 14.14px per axis offset each side
+   *   Green: polygon(0 0, 100% 0, 100% 22.5%, 0 72.5%)
+   *   Blue:  polygon(100% 27.5%, 100% 100%, 0 100%, 0 77.5%)
+   *
+   * Animation:
+   *   0–370ms:   shake — clip-path hypotenuses oscillate ⊥ to diagonal (gap wiggles)
+   *   400–900ms: slide — green translateY up, blue translateY down (vertical)
+   *   800–950ms: splash overlay fades out
+   */
+
+  .splash-overlay {
+    position: absolute; inset: 0; z-index: 10; overflow: hidden; background: #fff;
+    animation: fadeOut 150ms linear 800ms forwards;
+  }
+
+  .green-shape {
+    position: absolute; inset: 0;
+    background: #34C17B;
+    clip-path: polygon(0 0, 100% 0, 100% 22.5%, 0 72.5%);
+    animation:
+      greenShake 370ms linear,
+      slideUp 500ms ease-in 400ms forwards;
+  }
+
+  .blue-shape {
+    position: absolute; inset: 0;
+    background: #00AAEE;
+    clip-path: polygon(100% 27.5%, 100% 100%, 0 100%, 0 77.5%);
+    animation:
+      blueShake 370ms linear,
+      slideDown 500ms ease-in 400ms forwards;
+  }
+
+  /* Shake: oscillate hypotenuse ⊥ to diagonal direction (1,1)/√2.
+     6px→Δx=1.5%,Δy=0.76%.  5px→1.26%,0.63%.  3px→0.76%,0.38%. */
+  @keyframes greenShake {
+    0%   { clip-path: polygon(0 0, 100% 0,  100% 22.5%,     0 72.5%); }
+    16%  { clip-path: polygon(0 0, 100% 0,  101.5% 23.26%,  1.5% 73.26%); }
+    33%  { clip-path: polygon(0 0, 100% 0,  98.5% 21.74%,  -1.5% 71.74%); }
+    49%  { clip-path: polygon(0 0, 100% 0,  101.26% 23.13%, 1.26% 73.13%); }
+    64%  { clip-path: polygon(0 0, 100% 0,  98.74% 21.87%, -1.26% 71.87%); }
+    78%  { clip-path: polygon(0 0, 100% 0,  100.76% 22.88%, 0.76% 72.88%); }
+    91%  { clip-path: polygon(0 0, 100% 0,  99.24% 22.12%, -0.76% 72.12%); }
+    100% { clip-path: polygon(0 0, 100% 0,  100% 22.5%,     0 72.5%); }
+  }
+
+  @keyframes blueShake {
+    0%   { clip-path: polygon(100% 27.5%,     100% 100%, 0 100%, 0 77.5%); }
+    16%  { clip-path: polygon(101.5% 28.26%,  100% 100%, 0 100%, 1.5% 78.26%); }
+    33%  { clip-path: polygon(98.5% 26.74%,   100% 100%, 0 100%, -1.5% 76.74%); }
+    49%  { clip-path: polygon(101.26% 28.13%, 100% 100%, 0 100%, 1.26% 78.13%); }
+    64%  { clip-path: polygon(98.74% 26.87%,  100% 100%, 0 100%, -1.26% 76.87%); }
+    78%  { clip-path: polygon(100.76% 27.88%, 100% 100%, 0 100%, 0.76% 77.88%); }
+    91%  { clip-path: polygon(99.24% 27.12%,  100% 100%, 0 100%, -0.76% 77.12%); }
+    100% { clip-path: polygon(100% 27.5%,     100% 100%, 0 100%, 0 77.5%); }
+  }
+
+  @keyframes slideUp {
+    to { transform: translateY(-100%); }
+  }
+
+  @keyframes slideDown {
+    to { transform: translateY(100%); }
+  }
+
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+
+  button {
+    padding: 8px 20px; border: 1px solid #555; background: transparent;
+    color: #fff; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: background 0.15s;
+  }
+  button:hover { background: #333; }
+</style>
+</head>
+<body>
+  <h2>WALLET SPLASH ANIMATION PREVIEW</h2>
+  <div class="phone-frame" id="phone">
+    <div class="app-content">
+      <div class="logo">Privasys</div>
+      <span>Wallet</span>
+    </div>
+    <div class="splash-overlay" id="splash">
+      <div class="green-shape"></div>
+      <div class="blue-shape"></div>
+    </div>
+  </div>
+  <button onclick="replay()">Replay</button>
+
+  <script>
+    function replay() {
+      const phone = document.getElementById('phone');
+      const old = document.getElementById('splash');
+      if (old) old.remove();
+
+      const splash = document.createElement('div');
+      splash.className = 'splash-overlay';
+      splash.id = 'splash';
+      splash.innerHTML = '<div class="green-shape"></div><div class="blue-shape"></div>';
+      phone.appendChild(splash);
+
+      setTimeout(() => { splash.style.pointerEvents = 'none'; }, 960);
+    }
+  </script>
+</body>
+</html>

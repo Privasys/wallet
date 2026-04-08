@@ -36,9 +36,10 @@ const PERP = Math.SQRT1_2;
 
 interface Props {
     onComplete: () => void;
+    onReady?: () => void;
 }
 
-export function SplashAnimation({ onComplete }: Props) {
+export function SplashAnimation({ onComplete, onReady }: Props) {
     const shakePerp = useSharedValue(0);
     const greenSlideY = useSharedValue(0);
     const blueSlideY = useSharedValue(0);
@@ -107,7 +108,7 @@ export function SplashAnimation({ onComplete }: Props) {
     }));
 
     return (
-        <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="none">
+        <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="none" onLayout={() => onReady?.()}>
             <Animated.View style={[styles.greenShape, greenStyle]} />
             <Animated.View style={[styles.blueShape, blueStyle]} />
         </Animated.View>

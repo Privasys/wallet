@@ -103,13 +103,6 @@ export default function RootLayout() {
         if (error) throw error;
     }, [error]);
 
-    useEffect(() => {
-        if (loaded && storesReady) {
-            // Hide native splash — our custom animation overlay takes over
-            SplashScreen.hideAsync();
-        }
-    }, [loaded, storesReady]);
-
     const onSplashComplete = useCallback(() => {
         setShowSplashAnim(false);
     }, []);
@@ -121,7 +114,12 @@ export default function RootLayout() {
     return (
         <>
             <RootLayoutNav isOnboarded={isOnboarded} />
-            {showSplashAnim && <SplashAnimation onComplete={onSplashComplete} />}
+            {showSplashAnim && (
+                <SplashAnimation
+                    onComplete={onSplashComplete}
+                    onReady={() => SplashScreen.hideAsync()}
+                />
+            )}
         </>
     );
 }
