@@ -10,6 +10,24 @@ A mobile authenticator for the [Privasys](https://privasys.org) confidential com
 | `sdk/` | `@privasys/auth` — TypeScript browser SDK for relying parties |
 | `broker/` | Go WebSocket relay that pairs browser sessions with the wallet |
 
+### SDK Features
+
+- **`PrivasysAuth`** — QR-based wallet relay flow (Tier 1: highest assurance)
+- **`WebAuthnClient`** — Browser-native WebAuthn passkeys (Tier 2: platform authenticators)
+- **`SessionManager`** — Session persistence and restore via `getSession()` / `clearSession()`
+- **`AuthFrame`** — Hidden iframe on `privasys.id` for cross-origin session management
+- **IIFE bundle** — `privasys-auth.iife.js` (~9KB) for vanilla JS embedding via `window.Privasys`
+
+### Wallet Features
+
+- **RA-TLS attestation** — Native Rust module verifies SGX/TDX enclave certificates on-device
+- **Hardware-bound FIDO2** — P-256 keys in Secure Enclave (iOS) / StrongBox (Android)
+- **Trusted apps** — Trust-on-first-use with change detection (like SSH `known_hosts`)
+- **Biometric grace period** — Skip re-prompt for trusted apps within configurable window
+- **Batch auth** — Verify and sign in to multiple enclaves with a single biometric prompt
+- **Custom splash animation** — Diagonal shapes slide apart to reveal the app
+- **iOS Credential Provider** — AutoFill passkey extension for third-party WebAuthn flows
+
 ## Quick Start
 
 ### Wallet (mobile app)
