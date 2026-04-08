@@ -190,6 +190,7 @@ export class PrivasysAuth {
     ): void {
         switch (msg.type) {
             case 'peer-joined':
+            case 'wallet-waiting':
                 this.setState('wallet-connected');
                 break;
 
@@ -201,6 +202,7 @@ export class PrivasysAuth {
                     sessionToken: msg.sessionToken as string,
                     sessionId,
                     attestation: msg.attestation as AttestationInfo | undefined,
+                    pushToken: (msg.pushToken as string | undefined) || undefined,
                 };
 
                 // Store session locally
@@ -209,6 +211,7 @@ export class PrivasysAuth {
                     rpId: this.config.rpId,
                     origin: globalThis.location?.origin ?? '',
                     authenticatedAt: Date.now(),
+                    pushToken: result.pushToken,
                 });
 
                 this.events.onAuthenticated?.(result);

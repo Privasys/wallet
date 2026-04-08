@@ -3,6 +3,8 @@
 
 export { PrivasysAuth } from './client';
 export { WebAuthnClient } from './webauthn';
+export { AuthUI } from './ui';
+export type { AuthUIConfig, SignInResult } from './ui';
 export type {
     AuthConfig,
     AuthResult,
@@ -16,3 +18,5 @@ export type {
 export type { WebAuthnConfig, WebAuthnState, WebAuthnEvents } from './webauthn';
 export { generateQRPayload, generateBatchQRPayload, generateSessionId } from './qr';
 export { SessionManager } from './session';
+export { AuthFrame } from './frame-client';
+export type { AuthFrameConfig } from './frame-client';

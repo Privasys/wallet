@@ -15,5 +15,6 @@
 
 export { PrivasysAuth } from './client';
 export { WebAuthnClient } from './webauthn';
+export { AuthUI } from './ui';
 export { generateQRPayload, generateBatchQRPayload, generateSessionId } from './qr';
 export { SessionManager } from './session';

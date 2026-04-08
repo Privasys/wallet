@@ -32,6 +32,8 @@ export interface AuthResult {
     attestation?: AttestationInfo;
     /** The session ID used for this authentication. */
     sessionId: string;
+    /** Push token for sending future auth requests (wallet only). */
+    pushToken?: string;
 }
 
 /** An active session with an enclave. */
@@ -44,6 +46,8 @@ export interface AuthSession {
     origin: string;
     /** When this session was established (epoch ms). */
     authenticatedAt: number;
+    /** Push token for the wallet that authenticated (if available). */
+    pushToken?: string;
 }
 
 /** Events emitted by the auth client. */
