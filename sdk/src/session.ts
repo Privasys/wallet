@@ -46,6 +46,18 @@ export class SessionManager {
         return this.get(rpId) !== undefined;
     }
 
+    /**
+     * Find a push token from any stored session (most recent first).
+     * The push token is device-global, so a token from any rpId can
+     * be used to notify the wallet for a different rpId.
+     */
+    findPushToken(): string | undefined {
+        const sessions = this.getAll()
+            .filter((s) => !!s.pushToken)
+            .sort((a, b) => b.authenticatedAt - a.authenticatedAt);
+        return sessions[0]?.pushToken;
+    }
+
     /** Remove a session by rpId. */
     remove(rpId: string): void {
         const sessions = this.getAll().filter((s) => s.rpId !== rpId);

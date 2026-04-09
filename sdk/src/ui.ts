@@ -26,6 +26,9 @@ export interface AuthUIConfig {
     timeout?: number;
     /** Custom element to mount the overlay into (default: document.body). */
     container?: HTMLElement;
+    /** Push token from a previous session. When present the UI will offer
+     *  to send a push notification instead of showing a QR code. */
+    pushToken?: string;
 }
 
 /** Resolved result returned by `signIn()`. */
@@ -48,6 +51,7 @@ export interface SignInResult {
 
 type UIState =
     | 'idle'
+    | 'push-waiting'
     | 'qr-scanning'
     | 'wallet-connected'
     | 'authenticating'
@@ -426,6 +430,7 @@ const ICON_SHIELD_PLAIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 const ICON_PASSKEY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 11c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z"/><path d="M17.5 15.5c0-1.93-1.57-3.5-3.5-3.5s-3.5 1.57-3.5 3.5"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>`;
 const ICON_CHECK_CIRCLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>`;
 const ICON_X_CIRCLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`;
+const ICON_PHONE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -590,6 +595,9 @@ export class AuthUI {
             case 'idle':
                 modal = this.renderIdle();
                 break;
+            case 'push-waiting':
+                modal = this.renderPushWaiting();
+                break;
             case 'qr-scanning':
                 modal = this.renderQR();
                 break;
@@ -620,14 +628,21 @@ export class AuthUI {
 
     private renderIdle(): HTMLElement {
         const hasWebAuthn = WebAuthnClient.isSupported();
+        const hasPush = !!this.cfg.pushToken;
 
         return el('div', { className: 'modal' },
             this.brandHeader(),
-            // Wallet button
+            // Push-first: if we have a push token from a previous session
+            hasPush ? el('button', { className: 'btn-provider wallet', onClick: () => this.startPush() },
+                el('span', { html: ICON_PHONE }),
+                el('span', { className: 'btn-label' }, 'Connect with Privasys Wallet'),
+                el('span', { className: 'btn-hint' }, 'Notification to your phone'),
+            ) : null,
+            // QR wallet button — primary when no push token, secondary otherwise
             el('button', { className: 'btn-provider wallet', onClick: () => this.startWallet() },
                 el('span', { html: ICON_SHIELD_PLAIN }),
-                el('span', { className: 'btn-label' }, 'Continue with Privasys Wallet'),
-                el('span', { className: 'btn-hint' }, 'Attestation verified'),
+                el('span', { className: 'btn-label' }, hasPush ? 'Scan QR code instead' : 'Continue with Privasys Wallet'),
+                el('span', { className: 'btn-hint' }, hasPush ? 'New device' : 'Attestation verified'),
             ),
             // Divider + passkey
             hasWebAuthn ? el('div', { className: 'divider' }, el('span', null, 'or')) : null,
@@ -668,15 +683,46 @@ export class AuthUI {
         );
     }
 
-    private renderWalletProgress(): HTMLElement {
-        const isAuth = this.state === 'authenticating';
+    private renderPushWaiting(): HTMLElement {
+        const isConnected = this.state === 'push-waiting'; // waiting for wallet response
         return el('div', { className: 'modal' },
             this.brandHeader(),
             el('div', { className: 'progress-section' },
                 el('div', { className: 'spinner' }),
                 el('div', { className: 'steps' },
                     el('div', { className: 'step done' },
-                        el('span', { className: 'step-icon' }, '\u2713'), 'QR code scanned',
+                        el('span', { className: 'step-icon' }, '\u2713'), 'Notification sent',
+                    ),
+                    el('div', { className: 'step active' },
+                        el('span', { className: 'step-icon' }, '\u2022'), 'Waiting for your wallet\u2026',
+                    ),
+                    el('div', { className: 'step' },
+                        el('span', { className: 'step-icon' }, '\u2022'), 'Biometric authentication',
+                    ),
+                ),
+                el('p', { className: 'scan-hint' },
+                    'Check your phone — tap the notification to approve this connection.',
+                ),
+            ),
+            el('div', { className: 'footer' },
+                el('button', { className: 'link-btn', onClick: () => { this.cleanup(); this.startWallet(); } }, 'Scan QR code instead'),
+                ' \u00B7 ',
+                el('button', { className: 'link-btn', onClick: () => this.handleCancel() }, 'Cancel'),
+            ),
+        );
+    }
+
+    private renderWalletProgress(): HTMLElement {
+        const isAuth = this.state === 'authenticating';
+        const viaPush = !!this.cfg.pushToken && this.state !== 'qr-scanning';
+        const firstStep = viaPush ? 'Notification sent' : 'QR code scanned';
+        return el('div', { className: 'modal' },
+            this.brandHeader(),
+            el('div', { className: 'progress-section' },
+                el('div', { className: 'spinner' }),
+                el('div', { className: 'steps' },
+                    el('div', { className: 'step done' },
+                        el('span', { className: 'step-icon' }, '\u2713'), firstStep,
                     ),
                     el('div', { className: `step ${isAuth ? 'done' : 'active'}` },
                         el('span', { className: 'step-icon' }, isAuth ? '\u2713' : '\u2022'), 'Verifying enclave attestation',
@@ -784,6 +830,28 @@ export class AuthUI {
     }
 
     // ---- flows ----
+
+    private startPush(): void {
+        this.method = 'wallet';
+        const client = this.getRelayClient();
+        this.state = 'push-waiting';
+        this.render();
+
+        client.notifyAndWait(this.cfg.pushToken!).then(
+            (result) => {
+                this.sessionToken = result.sessionToken;
+                this.attestation = result.attestation;
+                this.sessionId = result.sessionId;
+                this.pushToken = result.pushToken;
+                this.complete();
+            },
+            (err) => {
+                this.state = 'error';
+                this.errorMsg = err?.message ?? 'Push authentication failed';
+                this.render();
+            },
+        );
+    }
 
     private startWallet(): void {
         this.method = 'wallet';

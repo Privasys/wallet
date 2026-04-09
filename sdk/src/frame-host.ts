@@ -32,7 +32,9 @@ window.addEventListener('message', async (e: MessageEvent) => {
             activeUI = null;
         }
 
-        activeUI = new AuthUI(config);
+        // Check for a push token from any previous session (returning user)
+        const pushToken = sessions.findPushToken();
+        activeUI = new AuthUI({ ...config, pushToken });
 
         try {
             const result: SignInResult = await activeUI.signIn();
