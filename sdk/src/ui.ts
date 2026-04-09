@@ -538,7 +538,13 @@ export class AuthUI {
             this.sessionId = '';
             this.attestation = undefined;
             this.mount();
-            this.render();
+
+            // If returning user (push token available), skip idle and send push immediately
+            if (this.cfg.pushToken) {
+                this.startPush();
+            } else {
+                this.render();
+            }
         });
     }
 
@@ -684,7 +690,7 @@ export class AuthUI {
     }
 
     private renderPushWaiting(): HTMLElement {
-        const isConnected = this.state === 'push-waiting'; // waiting for wallet response
+        const hasWebAuthn = WebAuthnClient.isSupported();
         return el('div', { className: 'modal' },
             this.brandHeader(),
             el('div', { className: 'progress-section' },
@@ -701,12 +707,21 @@ export class AuthUI {
                     ),
                 ),
                 el('p', { className: 'scan-hint' },
-                    'Check your phone — tap the notification to approve this connection.',
+                    'Check your phone \u2014 tap the notification to approve this connection.',
                 ),
             ),
+            el('div', { className: 'divider' }, el('span', null, 'or')),
+            el('button', { className: 'btn-provider wallet', onClick: () => { this.cleanup(); this.startWallet(); } },
+                el('span', { html: ICON_SHIELD_PLAIN }),
+                el('span', { className: 'btn-label' }, 'Scan QR code instead'),
+                el('span', { className: 'btn-hint' }, 'New device'),
+            ),
+            hasWebAuthn ? el('button', { className: 'btn-provider', onClick: () => { this.cleanup(); this.startPasskey('authenticate'); } },
+                el('span', { html: ICON_PASSKEY }),
+                el('span', { className: 'btn-label' }, 'Sign in with passkey'),
+                el('span', { className: 'btn-hint' }, 'Windows Hello, Touch ID, Face ID'),
+            ) : null,
             el('div', { className: 'footer' },
-                el('button', { className: 'link-btn', onClick: () => { this.cleanup(); this.startWallet(); } }, 'Scan QR code instead'),
-                ' \u00B7 ',
                 el('button', { className: 'link-btn', onClick: () => this.handleCancel() }, 'Cancel'),
             ),
         );
@@ -810,7 +825,15 @@ export class AuthUI {
             el('div', { className: 'error-icon', html: ICON_X_CIRCLE }),
             el('div', { className: 'error-title' }, 'Authentication failed'),
             el('div', { className: 'error-msg' }, this.errorMsg || 'An unknown error occurred.'),
-            el('button', { className: 'btn-retry', onClick: () => { this.state = 'idle'; this.errorMsg = ''; this.render(); } },
+            el('button', { className: 'btn-retry', onClick: () => {
+                this.errorMsg = '';
+                if (this.cfg.pushToken) {
+                    this.startPush();
+                } else {
+                    this.state = 'idle';
+                    this.render();
+                }
+            } },
                 'Try again',
             ),
             el('div', { className: 'footer' },

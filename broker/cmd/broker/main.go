@@ -40,9 +40,11 @@ func main() {
 	})
 
 	// Push notification trigger
-	mux.HandleFunc("POST /notify", func(w http.ResponseWriter, r *http.Request) {
+	notifyHandler := func(w http.ResponseWriter, r *http.Request) {
 		relay.HandleNotify(w, r, cfg.ExpoPushURL)
-	})
+	}
+	mux.HandleFunc("POST /notify", notifyHandler)
+	mux.HandleFunc("OPTIONS /notify", notifyHandler)
 
 	// App Attest token exchange (optional — only if SIGNING_KEY is set)
 	if cfg.SigningKey != "" {

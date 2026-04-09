@@ -80,6 +80,18 @@ type notifyRequest struct {
 
 // HandleNotify sends a push notification to the wallet via Expo push service.
 func HandleNotify(w http.ResponseWriter, r *http.Request, expoPushURL string) {
+	origin := r.Header.Get("Origin")
+	if origin != "" && allowedOrigin(origin) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	}
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 	if err != nil {
 		http.Error(w, `{"error":"bad request body"}`, http.StatusBadRequest)
