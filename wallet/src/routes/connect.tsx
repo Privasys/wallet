@@ -139,7 +139,13 @@ export default function ConnectScreen() {
                         await doAuthenticate(payload, credential.keyAlias, credential.credentialId);
                         return;
                     }
-                    setStep('biometric');
+                    if (credential) {
+                        // Trusted + has credential but outside grace period — prompt biometric
+                        setStep('biometric');
+                        await promptBiometricAndAuthenticate(payload, credential.keyAlias, credential.credentialId);
+                        return;
+                    }
+                    setStep('attestation');
                     return;
                 }
 
@@ -158,6 +164,31 @@ export default function ConnectScreen() {
         },
         [getApp, isAttestationMatch, getCredentialForRp, checkUnlocked]
     );
+
+    const promptBiometricAndAuthenticate = useCallback(async (
+        payload: QRPayload,
+        keyAlias: string,
+        credentialId: string
+    ) => {
+        const result = await LocalAuthentication.authenticateAsync({
+            promptMessage: `Connect to ${payload.rpId}`,
+            fallbackLabel: 'Use Passcode',
+            cancelLabel: 'Cancel',
+            disableDeviceFallback: false
+        });
+
+        if (!result.success) {
+            setError('Authentication cancelled');
+            setStep('error');
+            return;
+        }
+
+        if (gracePeriodSec > 0) {
+            setUnlocked(gracePeriodSec * 1000);
+        }
+
+        await doAuthenticate(payload, keyAlias, credentialId);
+    }, [gracePeriodSec]);
 
     const handleApprove = useCallback(async () => {
         if (!qr || !attestation) return;
@@ -315,6 +346,9 @@ export default function ConnectScreen() {
                                 : 'Confirm with biometrics to continue'}
                         </Text>
                         <ActivityIndicator size="large" color="#007AFF" />
+                        <Pressable style={styles.cancelButton} onPress={handleReject}>
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </Pressable>
                     </View>
                 )}
 
@@ -326,6 +360,9 @@ export default function ConnectScreen() {
                                 ? 'Signing in...'
                                 : 'Registering credential...'}
                         </Text>
+                        <Pressable style={styles.cancelButton} onPress={handleReject}>
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </Pressable>
                     </View>
                 )}
 
@@ -645,5 +682,11 @@ const styles = StyleSheet.create({
         minWidth: 160,
         alignItems: 'center'
     },
-    secondaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' }
+    secondaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+    cancelButton: {
+        marginTop: 24,
+        paddingVertical: 12,
+        paddingHorizontal: 24
+    },
+    cancelButtonText: { fontSize: 16, color: '#8E8E93' }
 });
