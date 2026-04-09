@@ -972,6 +972,8 @@ export class AuthUI {
                         'authenticating': 'authenticating',
                     };
                     if (map[s]) {
+                        // Don't override push-waiting with qr-scanning
+                        if (this.state === 'push-waiting' && s === 'waiting-for-scan') return;
                         this.state = map[s];
                         this.render();
                     }

@@ -127,7 +127,7 @@ export class PrivasysAuth {
                 pushToken,
                 sessionId: sid,
                 rpId: this.config.rpId,
-                origin: globalThis.location?.origin ?? '',
+                origin: this.config.rpId,
                 brokerUrl: this.config.brokerUrl,
             }),
         });
