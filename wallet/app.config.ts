@@ -83,9 +83,8 @@ export default (context: ConfigContext): ExpoConfig => {
         icon: config.icon,
         version: version,
         splash: {
-            image: config.icon,
             resizeMode: 'contain',
-            backgroundColor: config.adaptiveIconBackgroundColor
+            backgroundColor: '#FFFFFF'
         },
         assetBundlePatterns: ['**/*'],
         userInterfaceStyle: 'light',

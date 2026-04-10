@@ -34,6 +34,7 @@ function appName(rpId: string): string {
 
 type FlowStep =
     | 'verifying'
+    | 'confirm'
     | 'attestation'
     | 'attestation-changed'
     | 'biometric'
@@ -140,15 +141,9 @@ export default function ConnectScreen() {
                 ) {
                     setIsTrusted(true);
                     const credential = getCredentialForRp(payload.rpId);
-                    if (credential && checkUnlocked()) {
-                        // Within grace period — authenticate silently
-                        await doAuthenticate(payload, credential.keyAlias, credential.credentialId, credential.enclaveRpId);
-                        return;
-                    }
                     if (credential) {
-                        // Trusted + has credential but outside grace period — prompt biometric
-                        setStep('biometric');
-                        await promptBiometricAndAuthenticate(payload, credential.keyAlias, credential.credentialId, credential.enclaveRpId);
+                        // Trusted + has credential — show confirmation before proceeding
+                        setStep('confirm');
                         return;
                     }
                     setStep('attestation');
@@ -196,6 +191,20 @@ export default function ConnectScreen() {
 
         await doAuthenticate(payload, keyAlias, credentialId, enclaveRpId);
     }, [gracePeriodSec]);
+
+    const handleConfirm = useCallback(async () => {
+        if (!qr) return;
+        const credential = getCredentialForRp(qr.rpId);
+        if (!credential) return;
+
+        if (checkUnlocked()) {
+            // Within grace period — skip biometric
+            await doAuthenticate(qr, credential.keyAlias, credential.credentialId, credential.enclaveRpId);
+        } else {
+            setStep('biometric');
+            await promptBiometricAndAuthenticate(qr, credential.keyAlias, credential.credentialId, credential.enclaveRpId);
+        }
+    }, [qr, gracePeriodSec]);
 
     const handleApprove = useCallback(async () => {
         if (!qr || !attestation) return;
@@ -324,6 +333,25 @@ export default function ConnectScreen() {
                     <View style={styles.centered}>
                         <ActivityIndicator size="large" color="#007AFF" />
                         <Text style={styles.statusText}>Verifying enclave attestation...</Text>
+                    </View>
+                )}
+
+                {step === 'confirm' && qr && (
+                    <View style={styles.centered}>
+                        <View style={styles.confirmIcon}>
+                            <Text style={styles.confirmIconText}>{appName(qr.rpId).charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <Text style={styles.title}>Sign in?</Text>
+                        <Text style={styles.confirmDomain}>{qr.rpId}</Text>
+                        <Text style={styles.confirmHint}>
+                            Make sure you initiated this from your browser.
+                        </Text>
+                        <Pressable style={styles.confirmButton} onPress={handleConfirm}>
+                            <Text style={styles.confirmButtonText}>It's me</Text>
+                        </Pressable>
+                        <Pressable style={styles.cancelButton} onPress={handleReject}>
+                            <Text style={styles.cancelButtonText}>Not me</Text>
+                        </Pressable>
                     </View>
                 )}
 
@@ -764,5 +792,46 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 24
     },
-    cancelButtonText: { fontSize: 16, color: '#8E8E93' }
+    cancelButtonText: { fontSize: 16, color: '#8E8E93' },
+    confirmIcon: {
+        width: 72,
+        height: 72,
+        borderRadius: 20,
+        backgroundColor: '#007AFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 24
+    },
+    confirmIconText: {
+        fontSize: 32,
+        fontWeight: '700',
+        color: '#FFFFFF'
+    },
+    confirmDomain: {
+        fontSize: 15,
+        fontFamily: 'Inter',
+        color: '#64748B',
+        textAlign: 'center',
+        marginBottom: 12
+    },
+    confirmHint: {
+        fontSize: 14,
+        color: '#94A3B8',
+        textAlign: 'center',
+        marginBottom: 32,
+        paddingHorizontal: 20
+    },
+    confirmButton: {
+        backgroundColor: '#34C759',
+        borderRadius: 14,
+        paddingVertical: 16,
+        paddingHorizontal: 48,
+        minWidth: 200,
+        alignItems: 'center'
+    },
+    confirmButtonText: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '600'
+    }
 });
