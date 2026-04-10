@@ -48,6 +48,8 @@ export interface AuthSession {
     authenticatedAt: number;
     /** Push token for the wallet that authenticated (if available). */
     pushToken?: string;
+    /** Broker WebSocket URL used for this session (needed for renewal). */
+    brokerUrl?: string;
 }
 
 /** Events emitted by the auth client. */

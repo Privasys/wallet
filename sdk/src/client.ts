@@ -212,6 +212,7 @@ export class PrivasysAuth {
                     origin: globalThis.location?.origin ?? '',
                     authenticatedAt: Date.now(),
                     pushToken: result.pushToken,
+                    brokerUrl: this.config.brokerUrl,
                 });
 
                 this.events.onAuthenticated?.(result);

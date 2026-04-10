@@ -60,6 +60,10 @@ export interface SignInResult {
 export class AuthFrame {
     private readonly authOrigin: string;
     private readonly config: Omit<AuthFrameConfig, 'authOrigin'>;
+    private sessionIframe: HTMLIFrameElement | null = null;
+    private sessionHandler: ((e: MessageEvent) => void) | null = null;
+    private _onSessionExpired?: (rpId: string) => void;
+    private _onSessionRenewed?: (rpId: string) => void;
 
     constructor(config: AuthFrameConfig) {
         const { authOrigin, ...rest } = config;
@@ -70,6 +74,16 @@ export class AuthFrame {
     /** The RP ID used for authentication. */
     get rpId(): string {
         return this.config.rpId ?? this.config.appName;
+    }
+
+    /** Register a callback for when the session expires (renewal failed). */
+    set onSessionExpired(cb: ((rpId: string) => void) | undefined) {
+        this._onSessionExpired = cb;
+    }
+
+    /** Register a callback for when the session is silently renewed. */
+    set onSessionRenewed(cb: ((rpId: string) => void) | undefined) {
+        this._onSessionRenewed = cb;
     }
 
     /**
@@ -130,23 +144,21 @@ export class AuthFrame {
     /**
      * Check whether privasys.id already has a session for this RP.
      * Uses a hidden iframe to query localStorage on the auth origin.
+     * The iframe is kept alive so the frame-host can run renewal timers.
      */
     getSession(): Promise<{ token: string; rpId: string; authenticatedAt: number } | null> {
         return new Promise((resolve) => {
+            // Clean up any prior session iframe for this instance
+            this.destroySessionIframe();
+
             const iframe = document.createElement('iframe');
             iframe.src = this.authOrigin + '/auth/';
             iframe.style.cssText = 'position:fixed;width:0;height:0;border:none;opacity:0;pointer-events:none;';
 
             const timeout = setTimeout(() => {
-                cleanup();
+                this.destroySessionIframe();
                 resolve(null);
             }, 5000);
-
-            const cleanup = () => {
-                clearTimeout(timeout);
-                window.removeEventListener('message', handler);
-                iframe.remove();
-            };
 
             const handler = (e: MessageEvent) => {
                 if (e.origin !== this.authOrigin) return;
@@ -159,11 +171,29 @@ export class AuthFrame {
                         this.authOrigin,
                     );
                 } else if (data.type === 'privasys:session') {
-                    cleanup();
+                    clearTimeout(timeout);
+
+                    if (data.session?.pushToken && data.session?.brokerUrl) {
+                        // Keep iframe alive — frame-host runs renewal timers
+                        this.sessionIframe = iframe;
+                        this.sessionHandler = handler;
+                    } else {
+                        // No renewal possible — clean up
+                        window.removeEventListener('message', handler);
+                        iframe.remove();
+                    }
+
                     resolve(data.session || null);
+                } else if (data.type === 'privasys:session-renewed') {
+                    this._onSessionRenewed?.(data.rpId);
+                } else if (data.type === 'privasys:session-expired') {
+                    this._onSessionExpired?.(data.rpId);
+                    this.destroySessionIframe();
                 }
             };
 
+            this.sessionHandler = handler;
+            this.sessionIframe = iframe;
             window.addEventListener('message', handler);
             document.body.appendChild(iframe);
         });
@@ -174,6 +204,29 @@ export class AuthFrame {
      */
     clearSession(): Promise<void> {
         return new Promise((resolve) => {
+            // If we have a persistent iframe, use it directly
+            if (this.sessionIframe?.contentWindow) {
+                const handler = (e: MessageEvent) => {
+                    if (e.origin !== this.authOrigin) return;
+                    if (e.data?.type === 'privasys:session-cleared') {
+                        window.removeEventListener('message', handler);
+                        this.destroySessionIframe();
+                        resolve();
+                    }
+                };
+                window.addEventListener('message', handler);
+                this.sessionIframe.contentWindow.postMessage(
+                    { type: 'privasys:clear-session', rpId: this.rpId },
+                    this.authOrigin,
+                );
+                setTimeout(() => {
+                    window.removeEventListener('message', handler);
+                    this.destroySessionIframe();
+                    resolve();
+                }, 3000);
+                return;
+            }
+
             const iframe = document.createElement('iframe');
             iframe.src = this.authOrigin + '/auth/';
             iframe.style.cssText = 'position:fixed;width:0;height:0;border:none;opacity:0;pointer-events:none;';
@@ -210,11 +263,23 @@ export class AuthFrame {
         });
     }
 
-    /** Tear down any active iframe. */
+    /** Tear down any active iframes. */
     destroy(): void {
+        this.destroySessionIframe();
         const existing = document.querySelector(
             `iframe[src^="${this.authOrigin}/auth/"]`,
         );
         if (existing) existing.remove();
+    }
+
+    private destroySessionIframe(): void {
+        if (this.sessionHandler) {
+            window.removeEventListener('message', this.sessionHandler);
+            this.sessionHandler = null;
+        }
+        if (this.sessionIframe) {
+            this.sessionIframe.remove();
+            this.sessionIframe = null;
+        }
     }
 }
