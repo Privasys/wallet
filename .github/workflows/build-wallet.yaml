@@ -320,13 +320,13 @@ jobs:
             --profile "$PROFILE" \
             --local \
             --non-interactive \
-            --output build/wallet-android.apk
+            --output build/wallet-android.aab
 
-      - name: Upload APK
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: wallet-android-${{ inputs.profile || 'preview' }}
-          path: wallet/build/wallet-android.apk
+          path: wallet/build/wallet-android.aab
           retention-days: 30
 
   # ─── Submit to TestFlight ─────────────────────────────────────────
@@ -372,4 +372,48 @@ jobs:
           eas submit \
             --platform ios \
             --path build/wallet-ios.ipa \
+            --non-interactive
+
+  # ─── Submit to Google Play ────────────────────────────────────────
+  submit-google-play:
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      !inputs.use_eas_cloud &&
+      (inputs.platform == 'android' || inputs.platform == 'all') &&
+      inputs.profile == 'production'
+    needs: [build-local-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Download AAB
+        uses: actions/download-artifact@v4
+        with:
+          name: wallet-android-production
+          path: wallet/build/
+
+      - name: Install dependencies
+        working-directory: wallet
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Write Google Play service account key
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_KEY }}" > wallet/google-play-key.json
+
+      - name: Submit to Google Play
+        working-directory: wallet
+        run: |
+          eas submit \
+            --platform android \
+            --path build/wallet-android.aab \
             --non-interactive
